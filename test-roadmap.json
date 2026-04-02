@@ -1,0 +1,53 @@
+{
+  "subjects": [
+    {
+      "name": "Web Development",
+      "phases": [
+        {
+          "name": "HTML & CSS Fundamentals",
+          "deadline": "2024-02-01",
+          "tasks": [
+            {
+              "name": "Learn HTML basics",
+              "time": 30,
+              "difficulty": "easy",
+              "date": "2024-01-15",
+              "subtasks": [
+                {"name": "Understand HTML structure", "completed": false},
+                {"name": "Learn common HTML tags", "completed": false},
+                {"name": "Practice semantic HTML", "completed": false}
+              ]
+            },
+            {
+              "name": "Master CSS layouts",
+              "time": 45,
+              "difficulty": "medium",
+              "date": "2024-01-16",
+              "subtasks": [
+                {"name": "Learn Flexbox", "completed": false},
+                {"name": "Learn Grid", "completed": false},
+                {"name": "Practice responsive design", "completed": false}
+              ]
+            }
+          ]
+        },
+        {
+          "name": "JavaScript Essentials",
+          "tasks": [
+            {
+              "name": "Variables and functions",
+              "time": 60,
+              "difficulty": "easy",
+              "date": "2024-01-17",
+              "subtasks": [
+                {"name": "Declare variables", "completed": false},
+                {"name": "Create functions", "completed": false},
+                {"name": "Understand scope", "completed": false}
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

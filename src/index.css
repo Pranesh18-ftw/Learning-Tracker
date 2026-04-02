@@ -1,0 +1,83 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
+    monospace;
+}
+
+/* Dark mode styles */
+.dark {
+  background-color: #1a1a1a;
+}
+
+.dark body {
+  background-color: #1a1a1a;
+  color: #e5e7eb;
+}
+
+.dark .bg-white {
+  background-color: #2d3748 !important;
+  color: #e5e7eb;
+}
+
+.dark .bg-gray-50 {
+  background-color: #2d3748 !important;
+  color: #e5e7eb;
+}
+
+.dark .bg-gray-100 {
+  background-color: #2d3748 !important;
+  color: #e5e7eb;
+}
+
+.dark .text-gray-800 {
+  color: #e5e7eb !important;
+}
+
+.dark .text-gray-700 {
+  color: #e5e7eb !important;
+}
+
+.dark .text-gray-600 {
+  color: #cbd5e0 !important;
+}
+
+.dark .text-gray-500 {
+  color: #a0aec0 !important;
+}
+
+.dark .text-gray-400 {
+  color: #718096 !important;
+}
+
+.dark .border-gray-200 {
+  border-color: #4a5568 !important;
+}
+
+.dark .border-gray-100 {
+  border-color: #4a5568 !important;
+}
+
+.dark .shadow-sm {
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06) !important;
+}
+
+.dark .border-gray-300 {
+  border-color: #4a5568 !important;
+}

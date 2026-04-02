@@ -1,0 +1,32 @@
+{
+  "subjects": [
+    {
+      "name": "Programming Fundamentals",
+      "phases": [
+        {
+          "name": "C Programming",
+          "tasks": [
+            "Learn C Basics",
+            "Pointers and Memory",
+            {
+              "name": "Advanced Topics",
+              "subtasks": ["Structures", "File I/O", "Memory Management"]
+            }
+          ]
+        },
+        {
+          "name": "Web Development",
+          "tasks": [
+            {
+              "name": "HTML & CSS",
+              "subtasks": [
+                {"title": "HTML Tags", "completed": true},
+                {"title": "CSS Selectors", "completed": false}
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,40 @@
+{
+  "subjects": [
+    {
+      "name": "Embedded Systems",
+      "phases": [
+        {
+          "name": "Fundamentals",
+          "tasks": [
+            {
+              "name": "C Programming",
+              "subtasks": [
+                "Variables",
+                "Pointers"
+              ]
+            },
+            {
+              "name": "Microcontrollers",
+              "subtasks": [
+                "Arduino Basics",
+                "GPIO Programming"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Advanced Topics",
+          "tasks": [
+            {
+              "name": "RTOS",
+              "subtasks": [
+                "Task Management",
+                "Synchronization"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

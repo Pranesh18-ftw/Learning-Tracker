@@ -1,0 +1,13 @@
+{
+  "subjects": [
+    {
+      "name": "Simple Learning Path",
+      "phases": [
+        {
+          "name": "Basics",
+          "tasks": ["Introduction", "Setup", "First Program"]
+        }
+      ]
+    }
+  ]
+}

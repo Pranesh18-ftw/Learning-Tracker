@@ -1,0 +1,36 @@
+{
+  "subjects": [
+    {
+      "name": "Test Subject - Mixed Formats",
+      "phases": [
+        {
+          "name": "Phase 1 - String Tasks",
+          "tasks": ["Task A", "Task B", "Task C"]
+        },
+        {
+          "name": "Phase 2 - Object Tasks",
+          "tasks": [
+            {
+              "name": "Complex Task",
+              "time": 45,
+              "difficulty": "hard",
+              "subtasks": ["Subtask 1", "Subtask 2"]
+            }
+          ]
+        },
+        {
+          "name": "Phase 3 - Object Subtasks",
+          "tasks": [
+            {
+              "name": "Advanced Task",
+              "subtasks": [
+                {"title": "Subtask A", "completed": true},
+                {"title": "Subtask B", "completed": false}
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
