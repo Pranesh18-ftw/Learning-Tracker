@@ -807,6 +807,7 @@ export const RoadmapProvider = ({ children }) => {
       importRoadmap,
       deleteSubject,
       updateSubjectDeadline,
+      toggleSubtask,
       
       // Subject selection
       selectedSubjectId,
