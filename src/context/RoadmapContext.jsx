@@ -804,6 +804,7 @@ export const RoadmapProvider = ({ children }) => {
       skipTutorial,
       setTutorialStepNumber,
       validateRoadmapImport,
+      importRoadmap,
       
       // Subject selection
       selectedSubjectId,
