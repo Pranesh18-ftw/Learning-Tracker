@@ -9,7 +9,6 @@ const DashboardTasks = () => {
     subjects, 
     getNextSubtask, 
     getNextSubtaskForSubject, 
-    addFocusSession, 
     toggleSubtaskComplete, 
     setLearningPlan, 
     learningPlan, 

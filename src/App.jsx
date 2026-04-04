@@ -13,7 +13,7 @@ import Onboarding from './onboarding/Onboarding';
 import { RoadmapProvider, useRoadmap } from './context/RoadmapContext';
 
 function AppContent() {
-  const { showTutorial, completeTutorial, setTutorialStepNumber, isDarkMode, toggleTheme, hasImportedRoadmap } = useRoadmap();
+  const { showTutorial, completeTutorial, setTutorialStepNumber, isDarkMode, hasImportedRoadmap } = useRoadmap();
   const [activeTab, setActiveTab] = React.useState('roadmap'); // Start with roadmap for new users
 
   const renderContent = () => {

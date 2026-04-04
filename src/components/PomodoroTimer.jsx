@@ -24,9 +24,9 @@ const PomodoroTimer = ({
   const [taskName, setTaskName] = useState(initialTaskName);
   const [phaseName, setPhaseName] = useState(initialPhaseName);
   const [isOpen, setIsOpen] = useState(initialIsOpen);
-  const [onClose, setOnClose] = useState(initialOnClose);
-  const [closeTimer, setCloseTimer] = useState(initialCloseTimer);
-  const [autoStart, setAutoStart] = useState(initialAutoStart);
+  const [_onClose, _setOnClose] = useState(initialOnClose);
+  const [_closeTimer, _setCloseTimer] = useState(initialCloseTimer);
+  const [_autoStart, _setAutoStart] = useState(initialAutoStart);
   
   // Timer state
   const [timeLeft, setTimeLeft] = useState(25 * 60); // 25 minutes in seconds
@@ -261,10 +261,10 @@ const PomodoroTimer = ({
 
   // Auto-start effect
   useEffect(() => {
-    if (autoStart && isOpen) {
+    if (_autoStart && isOpen) {
       setIsRunning(true);
     }
-  }, [autoStart, isOpen]);
+  }, [_autoStart, isOpen]);
 
   // Format time as MM:SS
   const formatTime = (seconds) => {
@@ -285,9 +285,9 @@ const PomodoroTimer = ({
     <div className="bg-white rounded-lg shadow-lg p-6 max-w-md w-full">
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-xl font-semibold text-gray-800">Pomodoro Timer</h2>
-        {onClose && (
+        {_onClose && (
           <button
-            onClick={onClose}
+            onClick={_onClose}
             className="text-gray-400 hover:text-gray-600"
           >
             <X className="w-5 h-5" />

@@ -1,9 +1,9 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import { useRoadmap } from '../context/RoadmapContext';
 import { Clock, Target, Flame, Calendar, TrendingUp, BarChart3 } from 'lucide-react';
 
 const StatisticsPage = () => {
-  const { subjects, sessions, getStats, calculateStreak, getTotalLearningTime } = useRoadmap();
+  const { subjects, sessions, getStats, calculateStreak } = useRoadmap();
   const stats = getStats();
   const streak = calculateStreak();
   

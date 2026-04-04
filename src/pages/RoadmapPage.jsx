@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useRoadmap } from '../context/RoadmapContext';
-import { Upload, Plus, Trash2, Calendar } from 'lucide-react';
+import { Upload } from 'lucide-react';
 import TaskTree from '../components/TaskTree';
 
 const RoadmapPage = () => {
