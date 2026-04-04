@@ -387,29 +387,51 @@ export const RoadmapProvider = ({ children }) => {
   }
 
   const validateRoadmapImport = (importedData) => {
-    if (!importedData || !importedData.subjects || !Array.isArray(importedData.subjects)) {
-      return { valid: false, error: 'Invalid JSON structure: missing subjects array' };
+    if (!importedData) {
+      return { valid: false, error: 'No data provided. Please enter JSON or JavaScript object.' };
     }
     
-    if (importedData.subjects.length === 0) {
-      return { valid: false, error: 'At least one subject is required' };
+    // Try to parse if it's a string
+    let parsedData;
+    try {
+      parsedData = typeof importedData === 'string' ? JSON.parse(importedData) : importedData;
+    } catch (parseError) {
+      return { valid: false, error: `Invalid JSON format: ${parseError.message}\n\nPlease check:\n- Quoted strings\n- No trailing commas\n- Matched brackets\n- Proper comma separation` };
     }
     
-    const hasValidStructure = importedData.subjects.some(subject => {
-      if (!subject.name || !subject.phases || !Array.isArray(subject.phases)) {
+    if (!parsedData.subjects || !Array.isArray(parsedData.subjects)) {
+      return { valid: false, error: 'Missing "subjects" array. Your data should have:\n{\n  "subjects": [...]\n}' };
+    }
+    
+    if (parsedData.subjects.length === 0) {
+      return { valid: false, error: 'At least one subject is required. Add subjects to your data.' };
+    }
+    
+    // More flexible validation - check basic structure
+    const hasValidStructure = parsedData.subjects.every(subject => {
+      if (!subject.name || typeof subject.name !== 'string') {
         return false;
       }
       
-      return subject.phases.some(phase => {
-        if (!phase.name || !phase.tasks || !Array.isArray(phase.tasks)) {
+      if (!subject.phases || !Array.isArray(subject.phases)) {
+        return false;
+      }
+      
+      return subject.phases.every(phase => {
+        if (!phase.name || typeof phase.name !== 'string') {
           return false;
         }
         
-        return phase.tasks.some(task => {
-          if (!task.name) {
+        if (!phase.tasks || !Array.isArray(phase.tasks)) {
+          return false;
+        }
+        
+        return phase.tasks.every(task => {
+          if (!task.name || typeof task.name !== 'string') {
             return false;
           }
           
+          // Subtasks are optional and can be in various formats
           const subtasks = task.subtasks || [];
           return Array.isArray(subtasks) && subtasks.length >= 0;
         });
@@ -417,11 +439,11 @@ export const RoadmapProvider = ({ children }) => {
     });
     
     if (!hasValidStructure) {
-      return { valid: false, error: 'Invalid structure: Each subject must have phases with tasks containing subtasks' };
+      return { valid: false, error: 'Invalid structure. Each subject needs:\n- "name" (string)\n- "phases" (array)\n- Each phase needs:\n  * "name" (string)\n  * "tasks" (array)\n  * Each task needs "name" (string)\n  * Optional "subtasks" (array)' };
     }
     
     return { valid: true, error: null };
-  }
+  };
 
   const setTutorialStepNumber = (step) => {
     setTutorialStep(step)

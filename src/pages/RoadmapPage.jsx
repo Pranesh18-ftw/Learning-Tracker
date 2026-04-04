@@ -83,16 +83,34 @@ const RoadmapPage = () => {
     }
     
     try {
-      const success = importRoadmap(importText);
+      // Try to parse as JSON first
+      let parsedData;
+      try {
+        parsedData = JSON.parse(importText);
+      } catch (parseError) {
+        // Try to fix common JSON issues and parse again
+        try {
+          const fixedText = importText
+            .replace(/(\w+):/g, '"$1":') // Fix unquoted property names
+            .replace(/:\s*([a-zA-Z])/g, ': "$1"') // Fix unquoted string values
+            .replace(/,(\s*[}\]])/g, '$1') // Remove trailing commas
+            .replace(/,\s*}/g, '}'); // Remove trailing commas before closing
+          parsedData = JSON.parse(fixedText);
+        } catch (fixError) {
+          throw new Error('Invalid JSON format. Please check your syntax.\n\nCommon issues:\n- Missing quotes around strings\n- Trailing commas\n- Unmatched brackets\n- Extra whitespace\n\nExample format:\n{\n  "subjects": [\n    {\n      "name": "Subject Name",\n      "phases": [...]\n    }\n  ]\n}');
+        }
+      }
+      
+      const success = importRoadmap(parsedData);
       if (success) {
         setShowImportModal(false);
         setImportText('');
         setImportError('');
       } else {
-        setImportError('Failed to import data. Please check your JSON format.');
+        setImportError('Failed to import data. Please check your format.\n\nMake sure you have:\n- "subjects" array\n- Each subject has "phases" array\n- Each phase has "tasks" array\n- Each task has "name" and optional "subtasks" array');
       }
     } catch (error) {
-      setImportError('Invalid JSON format. Please check your syntax.');
+      setImportError(`Import error: ${error.message}\n\nPlease check your JSON format and try again.`);
     }
   };
 
