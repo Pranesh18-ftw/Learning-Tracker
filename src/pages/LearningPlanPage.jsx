@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { useRoadmap } from '../context/RoadmapContext';
-import { Plus, Calendar, Clock, CheckCircle } from 'lucide-react';
+import { Plus, CheckCircle } from 'lucide-react';
 
 const LearningPlanPage = () => {
-  const { learningPlan, setLearningPlan, getNextSubtask, subjects, toggleSubtaskComplete, storeAutoAssignAction, storeCompleteAction, lastAction, undoLastAction } = useRoadmap();
+  const { learningPlan, setLearningPlan, subjects, toggleSubtaskComplete, storeAutoAssignAction, storeCompleteAction, lastAction, undoLastAction } = useRoadmap();
   const [selectedSubjectId, setSelectedSubjectId] = useState(null);
 
   const today = new Date().toISOString().split('T')[0];

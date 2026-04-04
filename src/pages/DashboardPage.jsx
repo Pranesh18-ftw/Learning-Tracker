@@ -1,9 +1,7 @@
 import React from 'react';
-import { useRoadmap } from '../context/RoadmapContext';
 import DashboardTasks from '../components/DashboardTasks';
 
 const DashboardPage = () => {
-  const { subjects } = useRoadmap();
 
   return (
     <div className="space-y-6">

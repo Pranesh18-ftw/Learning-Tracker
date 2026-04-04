@@ -4,7 +4,7 @@ import { Upload } from 'lucide-react';
 import TaskTree from '../components/TaskTree';
 
 const RoadmapPage = () => {
-  const { importRoadmap, subjects, deleteSubject, updateSubjectDeadline, showTutorial, hasImportedRoadmap } = useRoadmap();
+  const { importRoadmap, updateSubjectDeadline, showTutorial, hasImportedRoadmap } = useRoadmap();
   const [showImportModal, setShowImportModal] = useState(false);
   const [importText, setImportText] = useState('');
   const [deadlineModal, setDeadlineModal] = useState({ show: false, subjectId: null, deadline: '' });
@@ -96,25 +96,10 @@ const RoadmapPage = () => {
     }
   };
 
-  const handleSetDeadline = (subjectId) => {
-    const subject = subjects.find(s => s.id === subjectId);
-    setDeadlineModal({
-      show: true,
-      subjectId: subjectId,
-      deadline: subject.deadline ? new Date(subject.deadline).toISOString().split('T')[0] : ''
-    });
-  };
-
   const handleSaveDeadline = () => {
     if (deadlineModal.subjectId && deadlineModal.deadline) {
       updateSubjectDeadline(deadlineModal.subjectId, deadlineModal.deadline);
       setDeadlineModal({ show: false, subjectId: null, deadline: '' });
-    }
-  };
-
-  const handleDeleteSubject = (subjectId) => {
-    if (window.confirm('Are you sure you want to delete this subject and all its phases and tasks?')) {
-      deleteSubject(subjectId);
     }
   };
 

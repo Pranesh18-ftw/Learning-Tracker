@@ -17,16 +17,16 @@ const PomodoroTimer = ({
   const { settings, addFocusSession, recordTaskCompletion } = useRoadmap();
   
   // State for timer
-  const [subtaskId, setSubtaskId] = useState(initialSubtaskId);
-  const [subjectId, setSubjectId] = useState(initialSubjectId);
-  const [phaseId, setPhaseId] = useState(initialPhaseId);
-  const [taskId, setTaskId] = useState(initialTaskId);
-  const [taskName, setTaskName] = useState(initialTaskName);
-  const [phaseName, setPhaseName] = useState(initialPhaseName);
+  const [subtaskId] = useState(initialSubtaskId);
+  const [subjectId] = useState(initialSubjectId);
+  const [phaseId] = useState(initialPhaseId);
+  const [taskId] = useState(initialTaskId);
+  const [taskName] = useState(initialTaskName);
+  const [phaseName] = useState(initialPhaseName);
   const [isOpen, setIsOpen] = useState(initialIsOpen);
-  const [_onClose, _setOnClose] = useState(initialOnClose);
-  const [_closeTimer, _setCloseTimer] = useState(initialCloseTimer);
-  const [_autoStart, _setAutoStart] = useState(initialAutoStart);
+  const [_onClose] = useState(initialOnClose);
+  const [_closeTimer] = useState(initialCloseTimer);
+  const [_autoStart] = useState(initialAutoStart);
   
   // Timer state
   const [timeLeft, setTimeLeft] = useState(25 * 60); // 25 minutes in seconds
