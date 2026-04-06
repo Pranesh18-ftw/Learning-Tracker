@@ -67,35 +67,6 @@ export const RoadmapProvider = ({ children }) => {
     safeLocalStorageSet("roadmap", JSON.stringify(roadmap));
   }, [roadmap]);
 
-  // Save daily goals to localStorage when they change
-  useEffect(() => {
-    safeLocalStorageSet('dailyGoals', JSON.stringify(dailyGoals));
-  }, [dailyGoals]);
-
-  // Update daily goals when sessions change
-  useEffect(() => {
-    const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
-    const todaySessions = sessions.filter(session => 
-      session.date && session.date.startsWith(today)
-    );
-    
-    const todayMinutes = todaySessions.reduce((total, session) => 
-      total + (session.durationMinutes || session.duration || 0), 0
-    );
-    
-    const goalAchieved = todayMinutes >= (settings.dailyGoalHours * 60);
-    
-    setDailyGoals(prev => ({
-      ...prev,
-      [today]: {
-        targetMinutes: settings.dailyGoalHours * 60,
-        actualMinutes: todayMinutes,
-        achieved: goalAchieved,
-        date: today
-      }
-    }));
-  }, [sessions, settings.dailyGoalHours]);
-
   // Last action state for undo functionality
   const [lastAction, setLastAction] = useState(null);
 
@@ -242,6 +213,35 @@ export const RoadmapProvider = ({ children }) => {
       return [];
     }
   })
+
+  // Save daily goals to localStorage when they change
+  useEffect(() => {
+    safeLocalStorageSet('dailyGoals', JSON.stringify(dailyGoals));
+  }, [dailyGoals]);
+
+  // Update daily goals when sessions change
+  useEffect(() => {
+    const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+    const todaySessions = sessions.filter(session => 
+      session.date && session.date.startsWith(today)
+    );
+    
+    const todayMinutes = todaySessions.reduce((total, session) => 
+      total + (session.durationMinutes || session.duration || 0), 0
+    );
+    
+    const goalAchieved = todayMinutes >= (settings.dailyGoalHours * 60);
+    
+    setDailyGoals(prev => ({
+      ...prev,
+      [today]: {
+        targetMinutes: settings.dailyGoalHours * 60,
+        actualMinutes: todayMinutes,
+        achieved: goalAchieved,
+        date: today
+      }
+    }));
+  }, [sessions, settings.dailyGoalHours]);
 
   // Notes data with localStorage persistence
   const [notes, setNotes] = useState(() => {
