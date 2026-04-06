@@ -67,6 +67,35 @@ export const RoadmapProvider = ({ children }) => {
     safeLocalStorageSet("roadmap", JSON.stringify(roadmap));
   }, [roadmap]);
 
+  // Save daily goals to localStorage when they change
+  useEffect(() => {
+    safeLocalStorageSet('dailyGoals', JSON.stringify(dailyGoals));
+  }, [dailyGoals]);
+
+  // Update daily goals when sessions change
+  useEffect(() => {
+    const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+    const todaySessions = sessions.filter(session => 
+      session.date && session.date.startsWith(today)
+    );
+    
+    const todayMinutes = todaySessions.reduce((total, session) => 
+      total + (session.durationMinutes || session.duration || 0), 0
+    );
+    
+    const goalAchieved = todayMinutes >= (settings.dailyGoalHours * 60);
+    
+    setDailyGoals(prev => ({
+      ...prev,
+      [today]: {
+        targetMinutes: settings.dailyGoalHours * 60,
+        actualMinutes: todayMinutes,
+        achieved: goalAchieved,
+        date: today
+      }
+    }));
+  }, [sessions, settings.dailyGoalHours]);
+
   // Last action state for undo functionality
   const [lastAction, setLastAction] = useState(null);
 
@@ -179,6 +208,17 @@ export const RoadmapProvider = ({ children }) => {
     dailyGoalHours: 2,
     pomodoroWorkDuration: 25,
     pomodoroBreakDuration: 5
+  })
+
+  // Daily goals tracking state
+  const [dailyGoals, setDailyGoals] = useState(() => {
+    try {
+      const saved = localStorage.getItem('dailyGoals');
+      return saved ? JSON.parse(saved) : {};
+    } catch (error) {
+      console.error('Error loading daily goals from localStorage:', error);
+      return {};
+    }
   })
 
   // Sessions data with localStorage persistence
@@ -695,6 +735,63 @@ export const RoadmapProvider = ({ children }) => {
     )
   }
 
+  // Calculate daily goal achievements
+  const getDailyGoalStats = () => {
+    const goalDays = Object.values(dailyGoals);
+    const achievedDays = goalDays.filter(day => day.achieved).length;
+    const totalDays = goalDays.length;
+    const achievementRate = totalDays > 0 ? Math.round((achievedDays / totalDays) * 100) : 0;
+    
+    // Get last 7 days for recent performance
+    const last7Days = [];
+    for (let i = 6; i >= 0; i--) {
+      const date = new Date();
+      date.setDate(date.getDate() - i);
+      const dateStr = date.toISOString().split('T')[0];
+      const dayData = dailyGoals[dateStr];
+      last7Days.push({
+        date: dateStr,
+        achieved: dayData?.achieved || false,
+        actualMinutes: dayData?.actualMinutes || 0,
+        targetMinutes: dayData?.targetMinutes || (settings.dailyGoalHours * 60)
+      });
+    }
+    
+    const recentAchieved = last7Days.filter(day => day.achieved).length;
+    const recentRate = Math.round((recentAchieved / 7) * 100);
+    
+    return {
+      totalDays,
+      achievedDays,
+      achievementRate,
+      recent7Days: last7Days,
+      recentAchieved,
+      recentRate,
+      currentStreak: calculateGoalStreak()
+    };
+  };
+
+  // Calculate current streak of achieved daily goals
+  const calculateGoalStreak = () => {
+    let streak = 0;
+    const today = new Date();
+    
+    for (let i = 0; i < 365; i++) { // Check up to a year back
+      const date = new Date(today);
+      date.setDate(date.getDate() - i);
+      const dateStr = date.toISOString().split('T')[0];
+      const dayData = dailyGoals[dateStr];
+      
+      if (dayData?.achieved) {
+        streak++;
+      } else if (i > 0) { // Don't break on today if not achieved yet
+        break;
+      }
+    }
+    
+    return streak;
+  };
+
   // Statistics helpers
   const getStats = () => {
     const allTasks = subjects.flatMap(s => s.phases).flatMap(p => p.tasks)
@@ -704,6 +801,8 @@ export const RoadmapProvider = ({ children }) => {
     const completionRate = allSubtasks.length > 0 
       ? Math.round((completedSubtasks / allSubtasks.length) * 100) 
       : 0
+
+    const dailyGoalStats = getDailyGoalStats();
 
     return {
       totalSubjects: subjects.length,
@@ -716,7 +815,8 @@ export const RoadmapProvider = ({ children }) => {
       completionRate,
       totalFocusMinutes: 0,
       totalFocusHours: 0,
-      totalFocusSessions: 0
+      totalFocusSessions: 0,
+      dailyGoalStats
     }
   }
 
@@ -778,6 +878,7 @@ export const RoadmapProvider = ({ children }) => {
       getStats,
       getPendingTasks,
       getTodaysTasks,
+      getDailyGoalStats,
       
       // Undo functionality
       lastAction,
