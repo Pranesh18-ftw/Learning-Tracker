@@ -1,180 +1,52 @@
 import React, { useMemo } from 'react';
 import { useRoadmap } from '../context/RoadmapContext';
 import { Award, Target, Clock, Flame, Lock, CheckCircle } from 'lucide-react';
+import { ACHIEVEMENTS } from '../services/achievementService';
+
+const iconMap = {
+  target: Target,
+  clock: Clock,
+  flame: Flame,
+  award: Award,
+  'check-circle': CheckCircle
+};
 
 const AchievementsPage = () => {
-  const { getStats, calculateStreak, getTotalLearningTime, sessions } = useRoadmap();
+  const { getStats, calculateStreak, getTotalLearningTime, sessions, taskCompletions, unlockedAchievements } = useRoadmap();
   const stats = getStats();
   const streak = calculateStreak();
   const totalTime = getTotalLearningTime();
 
-  // Calculate achievements
+  // Canonical achievements mapped with unlocked status and progress
   const achievements = useMemo(() => {
-    const totalHours = totalTime / 60;
-    const completedTasks = stats.completedSubtasks;
-    const focusSessions = sessions?.filter(s => s.type === 'focus').length || 0;
-    const longSessions = sessions?.filter(s => s.duration >= 120).length || 0;
+    return ACHIEVEMENTS.map(achievement => {
+      const isUnlocked =
+        unlockedAchievements.includes(achievement.id) ||
+        achievement.check({ sessions, taskCompletions, streak });
 
-    return [
-      // Task achievements
-      {
-        id: 'first-task',
-        title: 'First Task Completed',
-        description: 'Complete your first learning task',
-        icon: Target,
-        color: 'green',
-        unlocked: completedTasks >= 1,
-        progress: Math.min(completedTasks, 1),
-        maxProgress: 1
-      },
-      {
-        id: 'ten-tasks',
-        title: 'Task Master',
-        description: 'Complete 10 learning tasks',
-        icon: Target,
-        color: 'blue',
-        unlocked: completedTasks >= 10,
-        progress: Math.min(completedTasks, 10),
-        maxProgress: 10
-      },
-      {
-        id: 'fifty-tasks',
-        title: 'Task Expert',
-        description: 'Complete 50 learning tasks',
-        icon: Target,
-        color: 'purple',
-        unlocked: completedTasks >= 50,
-        progress: Math.min(completedTasks, 50),
-        maxProgress: 50
-      },
-      {
-        id: 'hundred-tasks',
-        title: 'Task Legend',
-        description: 'Complete 100 learning tasks',
-        icon: Award,
-        color: 'gold',
-        unlocked: completedTasks >= 100,
-        progress: Math.min(completedTasks, 100),
-        maxProgress: 100
-      },
+      const currentProgress = achievement.getProgress
+        ? achievement.getProgress({ sessions, taskCompletions, streak })
+        : (isUnlocked ? achievement.maxProgress : 0);
 
-      // Focus achievements
-      {
-        id: 'one-hour-focus',
-        title: 'Focused Hour',
-        description: 'Complete a 1-hour focus session',
-        icon: Clock,
-        color: 'blue',
-        unlocked: longSessions >= 1,
-        progress: Math.min(longSessions, 1),
-        maxProgress: 1
-      },
-      {
-        id: 'two-hour-focus',
-        title: 'Deep Focus',
-        description: 'Complete a 2-hour focus session',
-        icon: Clock,
-        color: 'purple',
-        unlocked: sessions?.some(s => s.duration >= 120) || false,
-        progress: sessions?.some(s => s.duration >= 120) || false ? 1 : 0,
-        maxProgress: 1
-      },
-      {
-        id: 'five-hour-focus',
-        title: 'Focus Marathon',
-        description: 'Complete a 5-hour focus session',
-        icon: Clock,
-        color: 'red',
-        unlocked: sessions?.some(s => s.duration >= 300) || false,
-        progress: sessions?.some(s => s.duration >= 300) || false ? 1 : 0,
-        maxProgress: 1
-      },
-
-      // Streak achievements
-      {
-        id: 'three-day-streak',
-        title: 'Getting Started',
-        description: 'Maintain a 3-day learning streak',
-        icon: Flame,
-        color: 'orange',
-        unlocked: streak >= 3,
-        progress: Math.min(streak, 3),
-        maxProgress: 3
-      },
-      {
-        id: 'seven-day-streak',
-        title: 'Week Warrior',
-        description: 'Maintain a 7-day learning streak',
-        icon: Flame,
-        color: 'red',
-        unlocked: streak >= 7,
-        progress: Math.min(streak, 7),
-        maxProgress: 7
-      },
-      {
-        id: 'thirty-day-streak',
-        title: 'Monthly Master',
-        description: 'Maintain a 30-day learning streak',
-        icon: Flame,
-        color: 'purple',
-        unlocked: streak >= 30,
-        progress: Math.min(streak, 30),
-        maxProgress: 30
-      },
-      {
-        id: 'hundred-day-streak',
-        title: 'Century Streak',
-        description: 'Maintain a 100-day learning streak',
-        icon: Award,
-        color: 'gold',
-        unlocked: streak >= 100,
-        progress: Math.min(streak, 100),
-        maxProgress: 100
-      },
-
-      // Time achievements
-      {
-        id: 'ten-hours',
-        title: 'Dedicated Learner',
-        description: 'Complete 10 hours of learning',
-        icon: Clock,
-        color: 'green',
-        unlocked: totalHours >= 10,
-        progress: Math.min(totalHours, 10),
-        maxProgress: 10
-      },
-      {
-        id: 'fifty-hours',
-        title: 'Time Investor',
-        description: 'Complete 50 hours of learning',
-        icon: Clock,
-        color: 'blue',
-        unlocked: totalHours >= 50,
-        progress: Math.min(totalHours, 50),
-        maxProgress: 50
-      },
-      {
-        id: 'hundred-hours',
-        title: 'Learning Expert',
-        description: 'Complete 100 hours of learning',
-        icon: Award,
-        color: 'purple',
-        unlocked: totalHours >= 100,
-        progress: Math.min(totalHours, 100),
-        maxProgress: 100
-      }
-    ];
-  }, [stats, streak, totalTime, sessions]);
+      return {
+        ...achievement,
+        title: achievement.name || achievement.title,
+        unlocked: isUnlocked,
+        progress: Math.min(currentProgress, achievement.maxProgress || 1),
+        maxProgress: achievement.maxProgress || 1
+      };
+    });
+  }, [unlockedAchievements, sessions, taskCompletions, streak]);
 
   const unlockedCount = achievements?.filter(a => a.unlocked).length || 0;
   const totalCount = achievements?.length || 0;
 
   // Group achievements by category
   const categories = {
-    tasks: achievements?.filter(a => a.id.includes('task')) || [],
-    focus: achievements?.filter(a => a.id.includes('focus')) || [],
-    streak: achievements?.filter(a => a.id.includes('streak')) || [],
-    time: achievements?.filter(a => a.id.includes('hours')) || []
+    tasks: achievements?.filter(a => a.category === 'tasks') || [],
+    focus: achievements?.filter(a => a.category === 'focus') || [],
+    streak: achievements?.filter(a => a.category === 'streak') || [],
+    time: achievements?.filter(a => a.category === 'time') || []
   };
 
   const getColorClasses = (color) => {
@@ -211,7 +83,7 @@ const AchievementsPage = () => {
         <div className="w-full bg-gray-200 rounded-full h-3 mb-4">
           <div 
             className="bg-gradient-to-r from-blue-500 to-purple-500 h-3 rounded-full transition-all duration-500"
-            style={{ width: `${(unlockedCount / totalCount) * 100}%` }}
+            style={{ width: `${totalCount > 0 ? (unlockedCount / totalCount) * 100 : 0}%` }}
           />
         </div>
 
@@ -244,7 +116,7 @@ const AchievementsPage = () => {
           
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {categoryAchievements.map((achievement) => {
-              const IconComponent = achievement.icon;
+              const IconComponent = (typeof achievement.icon === 'string' ? iconMap[achievement.icon] : achievement.icon) || Award;
               const colorClasses = getColorClasses(achievement.color);
               
               return (
@@ -308,9 +180,9 @@ const AchievementsPage = () => {
                     </div>
                   )}
 
-                  {/* Unlocked Date */}
+                  {/* Unlocked Badge */}
                   {achievement.unlocked && (
-                    <div className="mt-2 text-xs text-gray-500">
+                    <div className="mt-2 text-xs font-semibold text-green-700">
                       Unlocked! 🎉
                     </div>
                   )}
@@ -322,7 +194,7 @@ const AchievementsPage = () => {
       ))}
 
       {/* Motivational Message */}
-      {unlockedCount === totalCount && (
+      {unlockedCount === totalCount && totalCount > 0 && (
         <div className="bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-lg p-8 text-center">
           <Award className="w-16 h-16 mx-auto mb-4" />
           <h2 className="text-2xl font-bold mb-2">Achievement Master!</h2>

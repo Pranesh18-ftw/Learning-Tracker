@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { useRoadmap } from '../context/RoadmapContext';
 import { ChevronRight, ChevronDown, CheckCircle2, Trash2, Calendar } from 'lucide-react';
+import { getLocalDateKey, parseLocalDateKey } from '../utils/dateUtils';
 
 const TaskTree = () => {
-  const { subjects, toggleSubtask, deleteSubject, updateSubjectDeadline } = useRoadmap();
+  const { subjects, toggleSubtask, deleteSubject, updateSubjectDeadline, isTaskCompleted, toggleTaskCompletion } = useRoadmap();
   const [expandedSubjects, setExpandedSubjects] = useState(new Set());
   const [expandedPhases, setExpandedPhases] = useState(new Set());
   const [expandedTasks, setExpandedTasks] = useState(new Set());
@@ -44,6 +45,8 @@ const TaskTree = () => {
           return newSet;
         });
         break;
+      default:
+        break;
     }
   };
 
@@ -63,7 +66,7 @@ const TaskTree = () => {
     setDeadlineModal({
       show: true,
       subjectId: subjectId,
-      deadline: subject.deadline ? new Date(subject.deadline).toISOString().split('T')[0] : ''
+      deadline: subject.deadline ? getLocalDateKey(subject.deadline) : ''
     });
   };
 
@@ -74,15 +77,9 @@ const TaskTree = () => {
     }
   };
 
-  const getProgress = (items) => {
-    if (!items || items.length === 0) return 0;
-    const completed = items.filter(item => item.completed).length;
-    return Math.round((completed / items.length) * 100);
-  };
-
   const getTaskProgress = (task) => {
     if (!task.subtasks || task.subtasks.length === 0) {
-      return task.completed ? 100 : 0;
+      return (isTaskCompleted ? isTaskCompleted(task) : task.completed) ? 100 : 0;
     }
     const completed = task.subtasks.filter(st => st.completed).length;
     return Math.round((completed / task.subtasks.length) * 100);
@@ -90,27 +87,15 @@ const TaskTree = () => {
 
   const getPhaseProgress = (phase) => {
     if (!phase.tasks || phase.tasks.length === 0) return 0;
-    const completed = phase.tasks.filter(task => {
-      if (!task.subtasks || task.subtasks.length === 0) {
-        return task.completed;
-      }
-      return task.subtasks.every(st => st.completed);
-    }).length;
+    const completed = phase.tasks.filter(t => (isTaskCompleted ? isTaskCompleted(t) : t.completed)).length;
     return Math.round((completed / phase.tasks.length) * 100);
   };
 
   const getSubjectProgress = (subject) => {
-    if (!subject.phases || subject.phases.length === 0) return 0;
-    const completed = subject.phases.filter(phase => {
-      if (!phase.tasks || phase.tasks.length === 0) return false;
-      return phase.tasks.every(task => {
-        if (!task.subtasks || task.subtasks.length === 0) {
-          return task.completed;
-        }
-        return task.subtasks.every(st => st.completed);
-      });
-    }).length;
-    return Math.round((completed / subject.phases.length) * 100);
+    const allSubjectTasks = (subject.phases || []).flatMap(p => p.tasks || []);
+    if (allSubjectTasks.length === 0) return 0;
+    const completed = allSubjectTasks.filter(t => (isTaskCompleted ? isTaskCompleted(t) : t.completed)).length;
+    return Math.round((completed / allSubjectTasks.length) * 100);
   };
 
   return (
@@ -134,7 +119,7 @@ const TaskTree = () => {
                   <h3 className="font-semibold text-gray-800">{subject.name}</h3>
                   <div className="flex items-center gap-4 text-sm text-gray-500 mt-1">
                     <span>Progress: {subjectProgress}%</span>
-                    {subject.deadline && <span>Deadline: {new Date(subject.deadline).toLocaleDateString()}</span>}
+                    {subject.deadline && <span>Deadline: {parseLocalDateKey(subject.deadline)?.toLocaleDateString() || subject.deadline}</span>}
                   </div>
                 </div>
               </div>
@@ -218,9 +203,11 @@ const TaskTree = () => {
                           {phase.tasks.map((task) => {
                             const isTaskExpanded = expandedTasks.has(task.id);
                             const taskProgress = getTaskProgress(task);
-                            const taskCompleted = !task.subtasks || task.subtasks.length === 0 
-                              ? task.completed 
-                              : task.subtasks.every(st => st.completed);
+                            const taskCompleted = isTaskCompleted 
+                              ? isTaskCompleted(task) 
+                              : (!task.subtasks || task.subtasks.length === 0 
+                                  ? task.completed 
+                                  : task.subtasks.every(st => st.completed));
                             const hasSubtasks = task.subtasks && task.subtasks.length > 0;
 
                             return (
@@ -237,8 +224,11 @@ const TaskTree = () => {
                                       <input
                                         type="checkbox"
                                         checked={taskCompleted}
-                                        onChange={(e) => e.stopPropagation()}
-                                        className="w-4 h-4 text-gray-600 rounded border-gray-300 focus:ring-gray-500"
+                                        onChange={(e) => {
+                                          e.stopPropagation();
+                                          toggleTaskCompletion(subject.id, phase.id, task.id);
+                                        }}
+                                        className="w-4 h-4 text-green-600 rounded border-gray-300 focus:ring-green-500"
                                       />
                                     )}
                                   </div>

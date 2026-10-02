@@ -3,20 +3,24 @@ import { useRoadmap } from '../context/RoadmapContext';
 import PomodoroTimer from './PomodoroTimer';
 import TaskCompletionModal from './TaskCompletionModal';
 import { Play, CheckCircle, Clock, Target, Brain } from 'lucide-react';
+import { getLocalDateKey, addDaysToDateKey } from '../utils/dateUtils';
 
 const DashboardTasks = () => {
   const { 
     subjects, 
     getNextSubtask, 
     getNextSubtaskForSubject, 
-    toggleSubtaskComplete, 
+    completeSubtask,
+    toggleTaskCompletion,
+    addFocusSession,
+    isTaskCompleted,
+    sessions,
     setLearningPlan, 
     learningPlan, 
     storeCompleteAction, 
     undoLastAction, 
     lastAction, 
     settings,
-    recordTaskCompletion,
     selectedSubjectId,
     setSelectedSubjectId
   } = useRoadmap();
@@ -28,51 +32,135 @@ const DashboardTasks = () => {
   const [postponeDate, setPostponeDate] = useState('');
 
   // Calculate summary statistics
+  const totalTasks = (subjects || []).reduce(
+    (total, subject) =>
+      total +
+      (subject.phases || []).reduce(
+        (phaseTotal, phase) =>
+          phaseTotal + (phase.tasks || []).length,
+        0
+      ),
+    0
+  );
+
+  const tasksCompleted = (subjects || []).reduce(
+    (total, subject) =>
+      total +
+      (subject.phases || []).reduce(
+        (phaseTotal, phase) =>
+          phaseTotal +
+          (phase.tasks || []).filter(isTaskCompleted).length,
+        0
+      ),
+    0
+  );
+
   const summaryStats = {
     totalSubjects: Array.isArray(subjects) ? subjects.length : 0,
     totalPhases: Array.isArray(subjects) ? subjects.reduce((sum, subject) => sum + (subject.phases?.length || 0), 0) : 0,
-    totalTasks: Array.isArray(subjects) ? subjects.reduce((sum, subject) => 
-      sum + subject.phases?.reduce((phaseSum, phase) => phaseSum + (phase.tasks?.length || 0), 0) || 0, 0) : 0,
-    tasksCompleted: Array.isArray(subjects) ? subjects.reduce((sum, subject) => 
-      sum + subject.phases?.reduce((phaseSum, phase) => 
-        phaseSum + phase.tasks?.reduce((taskSum, task) => 
-          taskSum + (task.subtasks?.filter(subtask => subtask.completed).length || 0), 0) || 0, 0) || 0, 0) : 0
+    totalTasks,
+    tasksCompleted
   };
 
+  // Focus stats for today
+  const today = getLocalDateKey();
+  const todaySessions = (sessions || []).filter(session =>
+    session.date?.startsWith(today)
+  );
+  const todayFocusMinutes = todaySessions.reduce(
+    (total, session) =>
+      total +
+      Number(
+        session.durationMinutes ||
+        session.duration ||
+        0
+      ),
+    0
+  );
+
   // Utility function to find task details from learning plan task
-  const findTaskDetailsFromLearningPlan = useCallback((learningTask, subjectsArray) => {
-    if (!learningTask || !Array.isArray(subjectsArray)) return null;
-    
-    let taskDetails = null;
-    subjectsArray.forEach(subject => {
-      if (subject.id === learningTask.subjectId) {
-        subject.phases?.forEach(phase => {
-          if (phase.id === learningTask.phaseId) {
-            phase.tasks?.forEach(task => {
-              if (task.id === learningTask.taskId) {
-                taskDetails = {
-                  id: task.id,
-                  name: task.name,
-                  subjectId: learningTask.subjectId,
-                  subjectName: subject.name,
-                  phaseId: learningTask.phaseId,
-                  phaseName: phase.name,
-                  taskId: task.id,
-                  taskName: task.name,
-                  isLearningPlanTask: true
-                };
-              }
-            });
-          }
-        });
+  const findTaskDetailsFromLearningPlan = useCallback(
+    (learningTask, subjectsArray) => {
+      if (!learningTask || !Array.isArray(subjectsArray)) {
+        return null;
       }
-    });
-    return taskDetails;
-  }, []);
+
+      const subject = subjectsArray.find(
+        s => s.id === learningTask.subjectId
+      );
+
+      const phase = subject?.phases?.find(
+        p => p.id === learningTask.phaseId
+      );
+
+      const task = phase?.tasks?.find(
+        t => t.id === learningTask.taskId
+      );
+
+      if (!subject || !phase || !task) {
+        return null;
+      }
+
+      // Scheduled subtask
+      if (learningTask.subtaskId) {
+        const subtask = task.subtasks?.find(
+          s => s.id === learningTask.subtaskId
+        );
+
+        if (!subtask || subtask.completed) {
+          return null;
+        }
+
+        return {
+          id: subtask.id,
+          name: subtask.name,
+
+          subjectId: subject.id,
+          subjectName: subject.name,
+
+          phaseId: phase.id,
+          phaseName: phase.name,
+
+          taskId: task.id,
+          taskName: task.name,
+
+          subtaskId: subtask.id,
+
+          learningPlanEntryId: learningTask.id,
+          isLearningPlanTask: true
+        };
+      }
+
+      // Task with no subtasks
+      if (!task.subtasks?.length && !task.completed) {
+        return {
+          id: task.id,
+          name: task.name,
+
+          subjectId: subject.id,
+          subjectName: subject.name,
+
+          phaseId: phase.id,
+          phaseName: phase.name,
+
+          taskId: task.id,
+          taskName: task.name,
+
+          subtaskId: null,
+
+          learningPlanEntryId: learningTask.id,
+          isLearningPlanTask: true
+        };
+      }
+
+      return null;
+    },
+    []
+  );
 
   // Get today's task with priority: learning plan first, then roadmap
   useEffect(() => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = getLocalDateKey();
     const todayLearningTask = learningPlan?.find(task => 
       task.scheduledDate === today && 
       (!selectedSubjectId || task.subjectId === selectedSubjectId)
@@ -102,27 +190,71 @@ const DashboardTasks = () => {
     setShowCompletionModal(true);
   };
 
-  const finishTask = (task) => {
-    // Calculate actual elapsed time - this would come from timer state
-    // For now, we'll use the settings duration as a fallback
-    const durationMinutes = settings?.pomodoroWorkDuration || 25;
-    
-    // Record the task completion with actual time spent
-    recordTaskCompletion(task.taskId, durationMinutes);
-    
-    // Toggle subtask completion
-    toggleSubtaskComplete(task.subjectId, task.phaseId, task.taskId, task.id);
-    
-    // Store action for undo
-    storeCompleteAction(task.id, Date.now());
-    
-    // Close modal
+  const finishTask = (task, completionData = {}) => {
+    if (!task) return;
+
+    const {
+      timeSpent = settings?.pomodoroWorkDuration || 25,
+      notes = '',
+      difficulty = 'medium'
+    } = completionData;
+
+    // Complete the exact atomic item.
+    let completion = null;
+    if (task.subtaskId) {
+      completion = completeSubtask({
+        subjectId: task.subjectId,
+        phaseId: task.phaseId,
+        taskId: task.taskId,
+        subtaskId: task.subtaskId
+      });
+    } else {
+      // Task without subtasks.
+      completion = toggleTaskCompletion(
+        task.subjectId,
+        task.phaseId,
+        task.taskId
+      );
+    }
+
+    const durationNum = Number(timeSpent) || 25;
+
+    // Record learning session.
+    const session = addFocusSession({
+      subjectId: task.subjectId,
+      phaseId: task.phaseId,
+      taskId: task.taskId,
+      subtaskId: task.subtaskId || null,
+      durationMinutes: durationNum,
+      type: 'task-completion',
+      notes,
+      difficulty
+    });
+
+    // Store action for undo — use the real session.id and completion.id so undo can invert all records.
+    storeCompleteAction(
+      task.subtaskId || task.taskId,
+      session?.id,
+      completion?.id
+    );
+
+    // If this came from Learning Plan,
+    // remove ONLY that scheduled occurrence.
+    if (task.learningPlanEntryId) {
+      setLearningPlan(prev =>
+        prev.filter(
+          entry => entry.id !== task.learningPlanEntryId
+        )
+      );
+    }
+
     setShowCompletionModal(false);
     setSelectedTask(null);
-    
+    setShowTimer(false);
+
     // Auto-load next task
     setTimeout(() => {
-      const next = getNextSubtask();
+      const next = selectedSubjectId ? getNextSubtaskForSubject(selectedSubjectId) : getNextSubtask();
       setNextTask(next);
     }, 100);
   };
@@ -131,33 +263,40 @@ const DashboardTasks = () => {
     setSelectedTask(task);
     setShowPostponeModal(true);
     // Set default date to tomorrow
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    setPostponeDate(tomorrow.toISOString().split('T')[0]);
+    setPostponeDate(addDaysToDateKey(getLocalDateKey(), 1));
   };
 
-  const confirmPostpone = () => {
-    if (!postponeDate || !selectedTask) return;
+  const confirmPostpone = (customDate = null) => {
+    const targetDate = typeof customDate === 'string' ? customDate : postponeDate;
+    if (!targetDate || !selectedTask) return;
     
     const newLearningPlanEntry = {
-      id: Date.now(),
+      id: `plan-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       subjectId: selectedTask.subjectId,
       phaseId: selectedTask.phaseId,
       taskId: selectedTask.taskId,
-      scheduledDate: postponeDate
+      subtaskId: selectedTask.subtaskId || null,
+      scheduledDate: targetDate
     };
     
-    setLearningPlan(prev => [...prev, newLearningPlanEntry]);
+    setLearningPlan(prev => {
+      const filtered = selectedTask.learningPlanEntryId
+        ? (prev || []).filter(e => e.id !== selectedTask.learningPlanEntryId)
+        : (prev || []);
+      return [...filtered, newLearningPlanEntry];
+    });
     
-    // Close modal
+    // Close modals
     setShowPostponeModal(false);
+    setShowCompletionModal(false);
     setSelectedTask(null);
     setPostponeDate('');
     
     // Refresh today's task
-    const today = new Date().toISOString().split('T')[0];
-    const todayLearningTask = learningPlan?.find(task => 
+    const today = getLocalDateKey();
+    const todayLearningTask = (learningPlan || []).find(task => 
       task.scheduledDate === today && 
+      task.id !== selectedTask.learningPlanEntryId &&
       (!selectedSubjectId || task.subjectId === selectedSubjectId)
     );
     
@@ -171,6 +310,8 @@ const DashboardTasks = () => {
           ...task,
           isLearningPlanTask: false
         });
+      } else {
+        setNextTask(null);
       }
     }
   };
@@ -315,7 +456,7 @@ const DashboardTasks = () => {
                 subjectId={selectedTask.subjectId}
                 phaseId={selectedTask.phaseId}
                 taskId={selectedTask.taskId}
-                subtaskId={selectedTask.id}
+                subtaskId={selectedTask.subtaskId || null}
                 taskName={selectedTask.name}
                 phaseName={selectedTask.phaseName}
                 onClose={() => setShowTimer(false)}
@@ -347,11 +488,11 @@ const DashboardTasks = () => {
         <h3 className="text-lg font-semibold text-gray-800 mb-4">Focus Stats</h3>
         <div className="grid grid-cols-2 gap-4">
           <div className="text-center">
-            <div className="text-2xl font-bold text-blue-600">0</div>
+            <div className="text-2xl font-bold text-blue-600">{todaySessions.length}</div>
             <div className="text-sm text-gray-500">Sessions Today</div>
           </div>
           <div className="text-center">
-            <div className="text-2xl font-bold text-green-600">0h</div>
+            <div className="text-2xl font-bold text-green-600">{(todayFocusMinutes / 60).toFixed(1)}h</div>
             <div className="text-sm text-gray-500">Focus Time</div>
           </div>
         </div>
@@ -380,9 +521,15 @@ const DashboardTasks = () => {
           subjectId={selectedTask.subjectId}
           phaseId={selectedTask.phaseId}
           taskId={selectedTask.taskId}
-          subtaskId={selectedTask.id}
-          onComplete={() => finishTask(selectedTask)}
-          onPostpone={() => postponeTask(selectedTask)}
+          subtaskId={selectedTask.subtaskId || null}
+          onComplete={(completionData) => finishTask(selectedTask, completionData)}
+          onPostpone={(postponeData) => {
+            if (postponeData?.postponeDate) {
+              confirmPostpone(postponeData.postponeDate);
+            } else {
+              postponeTask(selectedTask);
+            }
+          }}
         />
       )}
 
@@ -413,7 +560,7 @@ const DashboardTasks = () => {
                   type="date"
                   value={postponeDate}
                   onChange={(e) => setPostponeDate(e.target.value)}
-                  min={new Date().toISOString().split('T')[0]}
+                  min={getLocalDateKey()}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>

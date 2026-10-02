@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { useRoadmap } from '../context/RoadmapContext';
+import { ACHIEVEMENTS } from '../services/achievementService';
 import { Trophy, X, Footprints, Rocket, CheckCircle, ListChecks, ClipboardCheck, CheckSquare, Timer, Flame, Award, Crown, Star, CalendarCheck, Clock, Hourglass, Zap, Target } from 'lucide-react';
 
 const iconMap = {
@@ -24,19 +25,27 @@ const iconMap = {
 const AchievementNotification = () => {
   const { newlyUnlocked, clearAchievementNotification } = useRoadmap();
 
+  const activeNotification = newlyUnlocked
+    ? (typeof newlyUnlocked === 'string'
+        ? ACHIEVEMENTS.find(a => a.id === newlyUnlocked)
+        : (Array.isArray(newlyUnlocked)
+            ? (typeof newlyUnlocked[0] === 'string' ? ACHIEVEMENTS.find(a => a.id === newlyUnlocked[0]) : newlyUnlocked[0])
+            : newlyUnlocked))
+    : null;
+
   useEffect(() => {
-    if (newlyUnlocked) {
+    if (activeNotification) {
       const timer = setTimeout(() => {
-        clearAchievementNotification();
+        clearAchievementNotification(activeNotification.id);
       }, 5000);
 
       return () => clearTimeout(timer);
     }
-  }, [newlyUnlocked, clearAchievementNotification]);
+  }, [activeNotification, clearAchievementNotification]);
 
-  if (!newlyUnlocked) return null;
+  if (!activeNotification) return null;
 
-  const IconComponent = iconMap[newlyUnlocked.icon] || Trophy;
+  const IconComponent = iconMap[activeNotification.icon] || Trophy;
 
   return (
     <div className="fixed top-6 right-6 z-50 animate-in slide-in-from-right-4 duration-300">
@@ -51,15 +60,15 @@ const AchievementNotification = () => {
               Achievement Unlocked!
             </p>
             <h3 className="text-lg font-bold text-gray-800 mb-1">
-              {newlyUnlocked.name}
+              {activeNotification.name || activeNotification.title}
             </h3>
             <p className="text-sm text-gray-500">
-              {newlyUnlocked.description}
+              {activeNotification.description}
             </p>
           </div>
           
           <button
-            onClick={clearAchievementNotification}
+            onClick={() => clearAchievementNotification(activeNotification.id)}
             className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
           >
             <X className="w-5 h-5 text-gray-400" />

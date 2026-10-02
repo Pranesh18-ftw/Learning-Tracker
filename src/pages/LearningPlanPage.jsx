@@ -1,31 +1,49 @@
 import React, { useState } from 'react';
 import { useRoadmap } from '../context/RoadmapContext';
 import { Plus, CheckCircle } from 'lucide-react';
+import { getLocalDateKey, addDaysToDateKey, parseLocalDateKey, compareDateKeys } from '../utils/dateUtils';
 
 const LearningPlanPage = () => {
-  const { learningPlan, setLearningPlan, subjects, toggleSubtaskComplete, storeAutoAssignAction, storeCompleteAction, lastAction, undoLastAction } = useRoadmap();
+  const { 
+    learningPlan, 
+    setLearningPlan, 
+    subjects, 
+    completeSubtask,
+    toggleTaskCompletion, 
+    storeAutoAssignAction, 
+    storeCompleteAction,
+    lastAction, 
+    undoLastAction 
+  } = useRoadmap();
   const [selectedSubjectId, setSelectedSubjectId] = useState(null);
 
-  const today = new Date().toISOString().split('T')[0];
+  const today = getLocalDateKey();
 
   // Get selected subject data
   const selectedSubject = subjects.find(s => s.id === selectedSubjectId);
 
   // Function to get task details from roadmap
-  const getTaskDetails = (taskId, phaseId, subjectId) => {
+  const getTaskDetails = (taskId, phaseId, subjectId, subtaskId = null) => {
     const subject = subjects.find(s => s.id === subjectId);
-    if (!subject) return { subjectName: 'Unknown Subject', phaseName: 'Unknown Phase', taskName: 'Unknown Task' };
+    if (!subject) return { subjectName: 'Unknown Subject', phaseName: 'Unknown Phase', taskName: 'Unknown Task', subtaskName: null };
     
     const phase = subject.phases?.find(p => p.id === phaseId);
-    if (!phase) return { subjectName: subject.name, phaseName: 'Unknown Phase', taskName: 'Unknown Task' };
+    if (!phase) return { subjectName: subject.name, phaseName: 'Unknown Phase', taskName: 'Unknown Task', subtaskName: null };
     
     const task = phase.tasks?.find(t => t.id === taskId);
-    if (!task) return { subjectName: subject.name, phaseName: phase.name, taskName: 'Unknown Task' };
+    if (!task) return { subjectName: subject.name, phaseName: phase.name, taskName: 'Unknown Task', subtaskName: null };
     
+    let subtaskName = null;
+    if (subtaskId && task.subtasks) {
+      const subtask = task.subtasks.find(s => s.id === subtaskId);
+      if (subtask) subtaskName = subtask.name;
+    }
+
     return {
       subjectName: subject.name,
       phaseName: phase.name,
-      taskName: task.name
+      taskName: task.name,
+      subtaskName
     };
   };
 
@@ -40,53 +58,82 @@ const LearningPlanPage = () => {
   // Auto assign tasks for selected subject if no scheduled tasks
   const autoAssignTasks = () => {
     if (!selectedSubject || hasScheduledTasks) return;
-    
-    const batchId = Date.now();
-    const allIncompleteSubtasks = [];
+
+    const batchId = `auto-${Date.now()}`;
+    const incompleteItems = [];
+
     selectedSubject.phases?.forEach(phase => {
       phase.tasks?.forEach(task => {
-        task.subtasks?.forEach(subtask => {
-          if (!subtask.completed) {
-            allIncompleteSubtasks.push({
-              id: Date.now() + Math.random(),
-              subjectId: selectedSubject.id,
-              phaseId: phase.id,
-              taskId: task.id,
-              scheduledDate: today,
-              isAutoAssigned: true,
-              batchId: batchId
-            });
-          }
-        });
+        if (task.subtasks && task.subtasks.length > 0) {
+          task.subtasks.forEach(subtask => {
+            if (!subtask.completed) {
+              incompleteItems.push({
+                subjectId: selectedSubject.id,
+                phaseId: phase.id,
+                taskId: task.id,
+                subtaskId: subtask.id
+              });
+            }
+          });
+        } else if (!task.completed) {
+          // Task itself is atomic.
+          incompleteItems.push({
+            subjectId: selectedSubject.id,
+            phaseId: phase.id,
+            taskId: task.id,
+            subtaskId: null
+          });
+        }
       });
     });
 
-    if (allIncompleteSubtasks.length === 0) {
+    if (incompleteItems.length === 0) {
       alert('No incomplete tasks found for auto assignment.');
       return;
     }
 
-    // Assign tasks day by day (max 1 per day for clarity)
-    const assignedTasks = allIncompleteSubtasks.map((task, index) => ({
-      ...task,
-      scheduledDate: new Date(Date.now() + index * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-    }));
+    const todayKey = getLocalDateKey();
 
-    setLearningPlan(prev => [...prev, ...assignedTasks]);
-    
-    // Store action for undo
+    const assignedTasks = incompleteItems.map((item, index) => {
+      return {
+        id: `plan-${Date.now()}-${index}`,
+        ...item,
+        scheduledDate: addDaysToDateKey(todayKey, index),
+        isAutoAssigned: true,
+        batchId
+      };
+    });
+
+    setLearningPlan(prev => [
+      ...prev,
+      ...assignedTasks
+    ]);
+
     storeAutoAssignAction(batchId);
-    
-    console.log(`Auto-assigned ${assignedTasks.length} tasks for ${selectedSubject.name}`);
   };
 
   // Schedule a task for a specific date
+  // Invariant rule: Scheduling a parent task schedules its first incomplete subtask.
   const scheduleTask = (taskId, phaseId, scheduledDate) => {
+    // Find the task and resolve the correct atomic subtask
+    const subject = subjects.find(s => s.id === selectedSubjectId);
+    const phase = subject?.phases?.find(p => p.id === phaseId);
+    const task = phase?.tasks?.find(t => t.id === taskId);
+
+    let subtaskId = null;
+    if (task?.subtasks?.length > 0) {
+      const firstIncomplete = task.subtasks.find(s => !s.completed);
+      if (firstIncomplete) {
+        subtaskId = firstIncomplete.id;
+      }
+    }
+
     const newTask = {
-      id: Date.now(),
+      id: `plan-${Date.now()}-${Math.random().toString(36).slice(2)}`,
       subjectId: selectedSubjectId,
       phaseId: phaseId,
       taskId: taskId,
+      subtaskId,
       scheduledDate: scheduledDate
     };
     
@@ -94,29 +141,54 @@ const LearningPlanPage = () => {
   };
 
   // Complete a task by updating roadmap
-  const completeTask = (taskId, phaseId, subjectId) => {
-    // Find the task and its subtasks
-    const subject = subjects.find(s => s.id === subjectId);
-    if (!subject) return;
-    
-    const phase = subject.phases?.find(p => p.id === phaseId);
-    if (!phase) return;
-    
-    const task = phase.tasks?.find(t => t.id === taskId);
-    if (!task) return;
-    
-    // Toggle completion for all subtasks in this task
-    task.subtasks?.forEach(subtask => {
-      toggleSubtaskComplete(subjectId, phaseId, taskId, subtask.id);
-    });
-    
-    // Store completion action for undo (use first subtask as representative)
-    if (task.subtasks && task.subtasks.length > 0) {
-      storeCompleteAction(task.subtasks[0].id, null);
+  const completeTask = (planEntry) => {
+    if (!planEntry) return;
+
+    const {
+      subjectId,
+      phaseId,
+      taskId,
+      subtaskId,
+      id: planEntryId
+    } = planEntry;
+
+    // Case 1: scheduled subtask
+    if (subtaskId) {
+      const completion = completeSubtask({
+        subjectId,
+        phaseId,
+        taskId,
+        subtaskId
+      });
+
+      storeCompleteAction(subtaskId, null, completion?.id);
+
+      // Remove ONLY this scheduled occurrence.
+      setLearningPlan(prev =>
+        (prev || []).filter(entry => entry.id !== planEntryId)
+      );
+
+      return;
     }
-    
-    // Remove from learning plan
-    setLearningPlan(prev => prev?.filter(t => t.taskId !== taskId) || []);
+
+    // Case 2: task has no subtasks.
+    const subject = subjects.find(s => s.id === subjectId);
+    const phase = subject?.phases?.find(p => p.id === phaseId);
+    const task = phase?.tasks?.find(t => t.id === taskId);
+
+    if (!task) return;
+
+    const completion = toggleTaskCompletion(
+      subjectId,
+      phaseId,
+      taskId
+    );
+
+    storeCompleteAction(taskId, null, completion?.id);
+
+    setLearningPlan(prev =>
+      (prev || []).filter(entry => entry.id !== planEntryId)
+    );
   };
 
   // Group tasks by date for display
@@ -273,14 +345,14 @@ const LearningPlanPage = () => {
           <h3 className="text-lg font-semibold text-gray-800 mb-4">Scheduled Tasks</h3>
           <div className="space-y-4">
             {Object.entries(tasksByDate)
-              .sort(([dateA], [dateB]) => new Date(dateA) - new Date(dateB))
+              .sort(([dateA], [dateB]) => compareDateKeys(dateA, dateB))
               .map(([date, tasks]) => {
                 const isToday = date === today;
                 return (
                   <div key={date} className={`border rounded-lg p-4 ${isToday ? 'border-blue-200 bg-blue-50' : 'border-gray-200'}`}>
                     <div className="flex items-center justify-between mb-3">
                       <h4 className={`font-semibold ${isToday ? 'text-blue-800' : 'text-gray-800'}`}>
-                        {isToday ? 'Today' : new Date(date).toLocaleDateString()}
+                        {isToday ? 'Today' : (parseLocalDateKey(date)?.toLocaleDateString() || date)}
                       </h4>
                       <span className="text-sm text-gray-500">
                         {(tasks?.length || 0)} {(tasks?.length || 0) === 1 ? 'task' : 'tasks'}
@@ -288,23 +360,27 @@ const LearningPlanPage = () => {
                     </div>
                     <div className="space-y-2">
                       {(tasks || []).map(task => {
-                        const taskDetails = getTaskDetails(task.taskId, task.phaseId, task.subjectId);
+                        const taskDetails = getTaskDetails(task.taskId, task.phaseId, task.subjectId, task.subtaskId);
                         
                         return (
                           <div key={task.id} className="border border-gray-200 rounded-lg p-3">
                             <div className="flex items-center justify-between">
                               <div>
-                                <h5 className="font-medium text-gray-800">{taskDetails.taskName}</h5>
-                                <p className="text-sm text-gray-500">{taskDetails.phaseName}</p>
+                                <h5 className="font-medium text-gray-800">
+                                  {taskDetails.subtaskName || taskDetails.taskName}
+                                </h5>
+                                <p className="text-sm text-gray-500">
+                                  {taskDetails.subtaskName ? `${taskDetails.taskName} • ${taskDetails.phaseName}` : taskDetails.phaseName}
+                                </p>
                                 {task.isAutoAssigned && (
                                   <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded">Auto-assigned</span>
                                 )}
                               </div>
                               <button 
                                 onClick={() => {
-                                  completeTask(task.taskId, task.phaseId, task.subjectId);
+                                  completeTask(task);
                                 }}
-                                className="flex items-center gap-2 px-3 py-1 bg-green-600 text-white rounded-lg text-sm"
+                                className="flex items-center gap-2 px-3 py-1 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 transition-colors"
                               >
                                 <CheckCircle className="w-4 h-4" />
                                 Complete

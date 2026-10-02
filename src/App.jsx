@@ -1,5 +1,5 @@
 import React from 'react';
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import { Upload } from 'lucide-react';
 import Topbar from './components/Topbar';
 import AchievementNotification from './components/AchievementNotification';
@@ -12,9 +12,20 @@ import AchievementsPage from './pages/AchievementsPage';
 import Onboarding from './onboarding/Onboarding';
 import { RoadmapProvider, useRoadmap } from './context/RoadmapContext';
 
+import { TAB_TO_PATH, PATH_TO_TAB } from './utils/navigation';
+export { TAB_TO_PATH, PATH_TO_TAB };
+
 function AppContent() {
   const { showTutorial, completeTutorial, setTutorialStepNumber, isDarkMode, hasImportedRoadmap } = useRoadmap();
-  const [activeTab, setActiveTab] = React.useState('roadmap'); // Start with roadmap for new users
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  // URL is authoritative
+  const activeTab = PATH_TO_TAB[location.pathname] || 'dashboard';
+
+  const setActiveTab = (tab) => {
+    navigate(TAB_TO_PATH[tab] || '/');
+  };
 
   const renderContent = () => {
     // During tutorial without imported roadmap, only show roadmap page
@@ -36,7 +47,7 @@ function AppContent() {
       case 'settings':
         return <SettingsPage />;
       default:
-        return <RoadmapPage />;
+        return <DashboardPage />;
     }
   };
 
@@ -89,7 +100,9 @@ function App() {
         <Route path="/roadmap" element={<AppContent />} />
         <Route path="/learning-plan" element={<AppContent />} />
         <Route path="/statistics" element={<AppContent />} />
+        <Route path="/achievements" element={<AppContent />} />
         <Route path="/settings" element={<AppContent />} />
+        <Route path="*" element={<AppContent />} />
       </Routes>
     </RoadmapProvider>
   );

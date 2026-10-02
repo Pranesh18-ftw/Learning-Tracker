@@ -30,12 +30,34 @@ npm install
 # Start development server
 npm start
 
+# Run automated tests
+npm test -- --watchAll=false
+
 # Build for production
 npm run build
 
 # Deploy to Netlify
 npm run deploy
 ```
+
+## 🏗️ Architecture
+The application is client-side and local-first.
+Application state is persisted in browser `localStorage`.
+There is no required backend server for normal application operation.
+
+## 💾 Persistence Architecture
+- **Persistence**: Browser localStorage
+- **Advantages**:
+  - Offline capability
+  - Simple, zero setup
+  - No account or login required
+  - Instant local state
+- **Limitations**:
+  - Device/browser specific
+  - Clearing browser data can remove state
+  - No automatic cross-device sync
+  - Finite browser storage quota
+- **Backup**: Use application export/import before clearing browser data.
 
 ## 📁 Project Structure
 

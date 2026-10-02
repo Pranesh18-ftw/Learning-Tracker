@@ -1,64 +1,45 @@
-# Learning Tracker App - Quick Start
+# Learning Tracker — Quick Start
 
-## 🚀 Easy Startup Commands
-
-### Option 1: Full Development (Backend + Frontend)
+## Development
+Install dependencies:
 ```bash
-npm run dev
+npm install
 ```
-This starts both the backend server (port 5000) and frontend (port 3001) simultaneously.
 
-### Option 2: Frontend Only (if backend already running)
+Start the application:
 ```bash
 npm start
 ```
-Starts the React app on http://localhost:3001
+The development server runs at:
+http://localhost:3000
 
-### Option 3: Backend Only (if frontend already running)
+## Production Build
 ```bash
-npm run server
+npm run build
 ```
-Starts the Express server on http://localhost:5000
+The production output is generated in:
+`build/`
 
-## 📱 App Access
-
-**Frontend:** http://localhost:3001
-**Backend API:** http://localhost:5000
-
-## 🎯 What's Working
-
-✅ **Subtask Completion Toggle**
-- Click any subtask → Instant completion (green + line-through)
-- Click again → Undo completion (black text)
-
-✅ **Statistics Page** 
-- Real-time updates from completed subtasks
-- Shows total, completed, completion rate, remaining
-
-✅ **Achievements Page**
-- Auto-unlocks based on completed subtasks:
-  - 1 completed → "First Task" 
-  - 10 completed → "10 Tasks Completed"
-  - 25, 50, 100+ → Progressive achievements
-
-✅ **State Management**
-- Simplified RoadmapContext with clean toggle logic
-- No confirmation modals - direct toggle functionality
-- All components use the same roadmap state
-
-## 🛠️ Development Notes
-
-- **Frontend Port:** 3001
-- **Backend Port:** 5000  
-- **State Management:** React Context (no localStorage complexity)
-- **Styling:** TailwindCSS + Lucide icons
-
-## 🐛 Troubleshooting
-
-If you see errors, run:
+## Testing
 ```bash
-npm install
-npm run dev
+npm test -- --watchAll=false
 ```
 
-The app should start automatically and work without any runtime errors!
+## Architecture
+The current application is client-side.
+Application state is persisted in browser localStorage.
+There is no required backend server for normal application operation.
+
+## Persistence Architecture
+Persistence: Browser localStorage
+Advantages:
+- Offline
+- Simple
+- No account required
+- Instant local state
+Limitations:
+- Device/browser specific
+- Clearing browser data can remove state
+- No automatic cross-device sync
+- Finite browser storage quota
+Backup: Use application export/import before clearing browser data.

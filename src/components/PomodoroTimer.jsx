@@ -3,239 +3,255 @@ import { X } from 'lucide-react';
 import { useRoadmap } from '../context/RoadmapContext';
 
 const PomodoroTimer = ({ 
-  subtaskId: initialSubtaskId = null,
-  subjectId: initialSubjectId = null,
-  phaseId: initialPhaseId = null,
-  taskId: initialTaskId = null,
-  taskName: initialTaskName = '',
-  phaseName: initialPhaseName = '',
-  isOpen: initialIsOpen = true, 
-  onClose: initialOnClose = null,
-  closeTimer: initialCloseTimer = null,
-  autoStart: initialAutoStart = false 
+  subtaskId = null,
+  subjectId = null,
+  phaseId = null,
+  taskId = null,
+  taskName = '',
+  phaseName = '',
+  isOpen = true, 
+  onClose = null,
+  autoStart = false 
 }) => {
-  const { settings, addFocusSession, recordTaskCompletion } = useRoadmap();
+  const { settings, addFocusSession } = useRoadmap();
   
-  // State for timer
-  const [subtaskId] = useState(initialSubtaskId);
-  const [subjectId] = useState(initialSubjectId);
-  const [phaseId] = useState(initialPhaseId);
-  const [taskId] = useState(initialTaskId);
-  const [taskName] = useState(initialTaskName);
-  const [phaseName] = useState(initialPhaseName);
-  const [isOpen, setIsOpen] = useState(initialIsOpen);
-  const [_onClose] = useState(initialOnClose);
-  const [_closeTimer] = useState(initialCloseTimer);
-  const [_autoStart] = useState(initialAutoStart);
-  
-  // Timer state
-  const [timeLeft, setTimeLeft] = useState(25 * 60); // 25 minutes in seconds
-  const [isRunning, setIsRunning] = useState(false);
+  // Timer settings & mode
   const [timerMode, setTimerMode] = useState('focus'); // focus, shortBreak, longBreak
   const [sessionCount, setSessionCount] = useState(0);
-  const intervalRef = useRef(null);
 
-  // Session tracking
+  // Helper to get duration based on mode and settings
+  const getDuration = useCallback((mode = timerMode) => {
+    if (mode === 'focus') {
+      return (settings?.pomodoroWorkDuration || 25) * 60;
+    } else if (mode === 'shortBreak') {
+      return (settings?.pomodoroBreakDuration || settings?.pomodoroShortBreak || 5) * 60;
+    } else if (mode === 'longBreak') {
+      return (settings?.pomodoroLongBreakDuration || settings?.pomodoroLongBreak || 15) * 60;
+    }
+    return 25 * 60;
+  }, [timerMode, settings?.pomodoroWorkDuration, settings?.pomodoroBreakDuration, settings?.pomodoroShortBreak, settings?.pomodoroLongBreakDuration, settings?.pomodoroLongBreak]);
+
+  // Wall-clock refs & state
+  const endTimeRef = useRef(null);
+  const completedRef = useRef(false);
+  const hasAutoStartedRef = useRef(false);
+  const [timeLeft, setTimeLeft] = useState(() => getDuration('focus'));
+  const [isRunning, setIsRunning] = useState(false);
+
+  // Session tracking across pauses
   const [sessionStartTime, setSessionStartTime] = useState(null);
   const [elapsedTime, setElapsedTime] = useState(0);
-  const [sessionSaved, setSessionSaved] = useState(false);
 
-  // Get duration based on mode and settings
-  const getDuration = useCallback(() => {
-    if (timerMode === 'focus') {
-      return (settings?.pomodoroWorkDuration || 25) * 60;
-    } else if (timerMode === 'shortBreak') {
-      return (settings?.pomodoroBreakDuration || 5) * 60;
-    } else if (timerMode === 'longBreak') {
-      return (settings?.pomodoroLongBreakDuration || 15) * 60;
-    }
-    return 25 * 60; // Default fallback
-  }, [timerMode, settings?.pomodoroWorkDuration, settings?.pomodoroBreakDuration, settings?.pomodoroLongBreakDuration]);
-
-  // Update timer when settings or mode change
+  // Synchronize initial duration if settings change while timer is untouched/idle
+  const prevDefaultDurationRef = useRef(getDuration('focus'));
   useEffect(() => {
-    if (timerMode === 'focus') {
-      setTimeLeft(settings?.pomodoroWorkDuration * 60 || 25 * 60);
-    } else if (timerMode === 'shortBreak') {
-      setTimeLeft(settings?.pomodoroBreakDuration * 60 || 5 * 60);
-    } else if (timerMode === 'longBreak') {
-      setTimeLeft(settings?.pomodoroLongBreakDuration * 60 || 15 * 60);
-    }
-  }, [timerMode, settings?.pomodoroWorkDuration, settings?.pomodoroBreakDuration, settings?.pomodoroLongBreakDuration]);
-
-  // Timer control functions
-  const recordTimerSession = useCallback((actualDurationMinutes) => {
-    addFocusSession({
-      id: Date.now(),
-      subtaskId,
-      durationMinutes: actualDurationMinutes, // Use actual elapsed time
-      type: "focus", // Add session type
-      date: new Date().toISOString(),
-      subjectId,
-      phaseId,
-      taskId,
-      notes: 'Timer completed',
-      difficulty: 'medium',
-      completed: true
-    });
-  }, [addFocusSession, recordTaskCompletion, subtaskId, subjectId, phaseId, taskId]);
-
-  const startTimer = useCallback(() => {
-    if (!isRunning) {
-      setIsRunning(true);
-      if (!sessionStartTime) {
-        setSessionStartTime(Date.now());
-        // Reset session saved flag for new timer
-        setSessionSaved(false);
+    const currentDur = getDuration(timerMode);
+    if (currentDur !== prevDefaultDurationRef.current) {
+      prevDefaultDurationRef.current = currentDur;
+      // Only adjust timeLeft if timer is completely idle (not started or paused mid-session)
+      if (!isRunning && elapsedTime === 0 && !sessionStartTime) {
+        setTimeLeft(currentDur);
       }
     }
-  }, [isRunning, sessionStartTime]);
+  }, [getDuration, timerMode, isRunning, elapsedTime, sessionStartTime]);
 
-  const pauseTimer = useCallback(() => {
-    setIsRunning(false);
-    if (sessionStartTime) {
-      const elapsed = Date.now() - sessionStartTime;
-      setElapsedTime(prev => prev + elapsed);
-      setSessionStartTime(null);
-    }
-  }, [sessionStartTime]);
-
-  const resetTimer = useCallback(() => {
-    setIsRunning(false);
-    setTimeLeft(getDuration());
-    if (sessionStartTime) {
-      const elapsed = Date.now() - sessionStartTime;
-      setElapsedTime(prev => prev + elapsed);
-      setSessionStartTime(null);
-    }
-  }, [getDuration, sessionStartTime]);
-
-  // Complete session and move to next
+  // Complete session and advance mode
   const completeSession = useCallback(() => {
+    setIsRunning(false);
+    endTimeRef.current = null;
+
+    // Record the session if it's a focus session
+    if (timerMode === 'focus') {
+      const totalElapsedMs = elapsedTime + (sessionStartTime ? Date.now() - sessionStartTime : 0);
+      const actualMinutes = Math.round(totalElapsedMs / 60000) || Math.floor(settings?.pomodoroWorkDuration || 25);
+
+      addFocusSession({
+        subtaskId: subtaskId || null,
+        durationMinutes: Math.max(1, actualMinutes),
+        type: 'focus',
+        subjectId: subjectId || null,
+        phaseId: phaseId || null,
+        taskId: taskId || null,
+        notes: 'Timer completed',
+        difficulty: 'medium'
+      });
+    }
+
+    // Reset tab title
+    document.title = 'Learning Tracker';
+
+    // Move to next mode
+    let nextMode = 'focus';
+    if (timerMode === 'focus') {
+      const newSessionCount = sessionCount + 1;
+      setSessionCount(newSessionCount);
+      nextMode = newSessionCount % 4 === 0 ? 'longBreak' : 'shortBreak';
+    }
+    setTimerMode(nextMode);
+    setTimeLeft(getDuration(nextMode));
+
+    // Reset session timing
+    setElapsedTime(0);
+    setSessionStartTime(null);
+
+    // Optional Notification (layer 2)
     try {
-      pauseTimer();
-      
-      // Show browser notification
       if ('Notification' in window && Notification.permission === 'granted') {
-        const modeLabel = timerMode === 'focus' ? 'Focus' : timerMode === 'shortBreak' ? 'Short Break' : 'Long Break';
+        const modeLabel =
+          timerMode === 'focus'
+            ? 'Focus'
+            : timerMode === 'shortBreak'
+            ? 'Short Break'
+            : 'Long Break';
         new Notification('Timer Finished', {
           body: `${modeLabel} session complete`,
           icon: '/favicon.ico'
         });
       }
-      
-      // Play sound
-      try {
-        // Try to load the audio file first
-        const audio = new Audio('/timer.mp3');
-        audio.addEventListener('error', () => {
-          console.log('Timer sound file not found, using fallback beep');
-          // Fallback: create a simple beep sound
-          try {
-            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            const oscillator = audioContext.createOscillator();
-            const gainNode = audioContext.createGain();
-            
-            oscillator.connect(gainNode);
-            gainNode.connect(audioContext.destination);
-            
-            oscillator.frequency.value = 800;
-            oscillator.type = 'sine';
-            gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
-            
-            oscillator.start(audioContext.currentTime);
-            oscillator.stop(audioContext.currentTime + 0.5);
-          } catch (fallbackError) {
-            console.log('Audio fallback failed:', fallbackError);
-          }
-        });
-        
-        audio.play().catch(() => {
-          console.log('Audio play failed, using fallback beep');
-          // Fallback: create a simple beep sound
+    } catch {
+      // Notification failure must never affect timer truth.
+    }
+
+    // Optional Audio (layer 3)
+    try {
+      const audio = new Audio('/timer.mp3');
+      audio.play().catch(() => {
+        try {
           const audioContext = new (window.AudioContext || window.webkitAudioContext)();
           const oscillator = audioContext.createOscillator();
           const gainNode = audioContext.createGain();
-          
           oscillator.connect(gainNode);
           gainNode.connect(audioContext.destination);
-          
           oscillator.frequency.value = 800;
           oscillator.type = 'sine';
           gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
           gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
-          
           oscillator.start(audioContext.currentTime);
           oscillator.stop(audioContext.currentTime + 0.5);
-        });
-      } catch (error) {
-        console.log('Audio playback failed:', error);
-      }
-      
-      // Reset tab title
-      document.title = 'Learning Tracker';
-      
-      // Record the session if it's a focus session
-      if (timerMode === 'focus' && subtaskId) {
-        const actualDurationMinutes = Math.floor((elapsedTime + (sessionStartTime ? Date.now() - sessionStartTime : 0)) / 60000);
-        recordTimerSession(actualDurationMinutes || settings?.pomodoroWorkDuration || 25);
-      }
-      
-      // Move to next mode or close
-      if (timerMode === 'focus') {
-        const newSessionCount = sessionCount + 1;
-        setSessionCount(newSessionCount);
-        
-        // Every 4 focus sessions, take a long break
-        if (newSessionCount % 4 === 0) {
-          setTimerMode('longBreak');
-        } else {
-          setTimerMode('shortBreak');
+        } catch {
+          // Audio fallback ignored
         }
-      } else {
-        // After breaks, go back to focus
-        setTimerMode('focus');
-      }
-      
-      setTimeLeft(getDuration());
-      setElapsedTime(0); // Reset elapsed time for next session
-      setSessionStartTime(null);
-      setSessionSaved(true); // Mark as saved to prevent re-execution
-    } catch (error) {
-      console.error('Error in completeSession:', error);
-      // Ensure cleanup even if something fails
-      setSessionSaved(true);
+      });
+    } catch {
+      // Audio failure must never affect timer truth.
     }
-  }, [timerMode, sessionCount, sessionStartTime, elapsedTime, subjectId, phaseId, taskId, subtaskId, taskName, phaseName, addFocusSession, pauseTimer, getDuration, sessionSaved, settings?.pomodoroWorkDuration, recordTaskCompletion, recordTimerSession]);
+  }, [
+    timerMode,
+    elapsedTime,
+    sessionStartTime,
+    settings?.pomodoroWorkDuration,
+    addFocusSession,
+    subtaskId,
+    subjectId,
+    phaseId,
+    taskId,
+    sessionCount,
+    getDuration
+  ]);
 
-  // Timer effect
-  useEffect(() => {
-    if (isRunning && timeLeft > 0) {
-      intervalRef.current = setInterval(() => {
-        setTimeLeft(prev => prev - 1);
-      }, 1000);
-    } else if (timeLeft === 0 && !sessionSaved) {
-      try {
-        completeSession();
-      } catch (error) {
-        console.error('Error completing session:', error);
-        setSessionSaved(true); // Prevent infinite loop
-      }
-    } else {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
+  // Synchronize timer with wall-clock time
+  const syncTimer = useCallback(() => {
+    if (!endTimeRef.current) {
+      return;
     }
+
+    const remaining = Math.max(
+      0,
+      Math.ceil((endTimeRef.current - Date.now()) / 1000)
+    );
+
+    setTimeLeft(remaining);
+
+    if (remaining <= 0 && !completedRef.current) {
+      completedRef.current = true;
+      completeSession();
+    }
+  }, [completeSession]);
+
+  // Start / Resume timer
+  const startTimer = useCallback(() => {
+    if (isRunning) return;
+
+    const remainingToRun = timeLeft > 0 ? timeLeft : getDuration();
+    if (timeLeft <= 0) {
+      setTimeLeft(remainingToRun);
+    }
+
+    // Set start time for current interval
+    setSessionStartTime(Date.now());
+    // NOTE: do NOT reset elapsedTime! Preserves time spent before previous pause.
+
+    endTimeRef.current = Date.now() + remainingToRun * 1000;
+    completedRef.current = false;
+    setIsRunning(true);
+  }, [isRunning, timeLeft, getDuration]);
+
+  // Pause timer preserving remaining duration
+  const pauseTimer = useCallback(() => {
+    if (!isRunning) return;
+
+    let remaining = timeLeft;
+    if (endTimeRef.current) {
+      remaining = Math.max(0, Math.ceil((endTimeRef.current - Date.now()) / 1000));
+    }
+    setTimeLeft(remaining);
+    setIsRunning(false);
+
+    if (sessionStartTime) {
+      setElapsedTime(prev => prev + (Date.now() - sessionStartTime));
+      setSessionStartTime(null);
+    }
+
+    endTimeRef.current = null;
+  }, [isRunning, timeLeft, sessionStartTime]);
+
+  // Reset timer back to full duration of current mode
+  const resetTimer = useCallback(() => {
+    setIsRunning(false);
+    endTimeRef.current = null;
+    completedRef.current = false;
+    setSessionStartTime(null);
+    setElapsedTime(0);
+    setTimeLeft(getDuration(timerMode));
+  }, [getDuration, timerMode]);
+
+  // Switch mode explicitly
+  const handleModeChange = useCallback((modeId) => {
+    if (modeId === timerMode && !isRunning) return;
+    setTimerMode(modeId);
+    setIsRunning(false);
+    endTimeRef.current = null;
+    completedRef.current = false;
+    setSessionStartTime(null);
+    setElapsedTime(0);
+    setTimeLeft(getDuration(modeId));
+  }, [timerMode, isRunning, getDuration]);
+
+  // Timer interval effect for UI refresh
+  useEffect(() => {
+    if (!isRunning) return undefined;
+
+    syncTimer();
+    const interval = window.setInterval(syncTimer, 250);
 
     return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
+      window.clearInterval(interval);
+    };
+  }, [isRunning, syncTimer]);
+
+  // Visibility recovery: immediately sync wall-clock time when tab becomes visible
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        syncTimer();
       }
     };
-  }, [isRunning, timeLeft, completeSession, sessionSaved]);
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [syncTimer]);
 
   // Update browser tab title while timer runs
   useEffect(() => {
@@ -259,12 +275,13 @@ const PomodoroTimer = ({
     }
   }, []);
 
-  // Auto-start effect
+  // Auto-start effect: triggers ONCE on initial open if requested, never re-triggers upon pause!
   useEffect(() => {
-    if (_autoStart && isOpen) {
-      setIsRunning(true);
+    if (autoStart && isOpen && !hasAutoStartedRef.current) {
+      hasAutoStartedRef.current = true;
+      startTimer();
     }
-  }, [_autoStart, isOpen]);
+  }, [autoStart, isOpen, startTimer]);
 
   // Format time as MM:SS
   const formatTime = (seconds) => {
@@ -285,9 +302,9 @@ const PomodoroTimer = ({
     <div className="bg-white rounded-lg shadow-lg p-6 max-w-md w-full">
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-xl font-semibold text-gray-800">Pomodoro Timer</h2>
-        {_onClose && (
+        {onClose && (
           <button
-            onClick={_onClose}
+            onClick={onClose}
             className="text-gray-400 hover:text-gray-600"
           >
             <X className="w-5 h-5" />
@@ -300,12 +317,7 @@ const PomodoroTimer = ({
         {timerModes.map(mode => (
           <button
             key={mode.id}
-            onClick={() => {
-              setTimerMode(mode.id);
-              setTimeLeft(getDuration());
-              setIsRunning(false);
-              setSessionSaved(false);
-            }}
+            onClick={() => handleModeChange(mode.id)}
             className={`px-4 py-2 rounded-lg font-medium transition-colors ${
               timerMode === mode.id
                 ? mode.className

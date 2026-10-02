@@ -1,6 +1,7 @@
 import React from 'react';
 import { useRoadmap } from '../context/RoadmapContext';
 import { Clock, Target, Flame, Calendar, TrendingUp, BarChart3 } from 'lucide-react';
+import { getLocalDateKey, parseLocalDateKey } from '../utils/dateUtils';
 
 const StatisticsPage = () => {
   const { subjects, sessions, getStats, calculateStreak, getDailyGoalStats } = useRoadmap();
@@ -32,10 +33,9 @@ const StatisticsPage = () => {
       const dayDate = new Date(weekStart);
       dayDate.setDate(weekStart.getDate() + index);
       
+      const dayKey = getLocalDateKey(dayDate);
       const daySessions = sessions?.filter(session => {
-        const sessionDate = new Date(session.date);
-        sessionDate.setHours(0, 0, 0, 0);
-        return sessionDate.getTime() === dayDate.getTime();
+        return session.date === dayKey;
       }) || [];
 
       const totalMinutes = daySessions?.reduce((sum, session) => {
@@ -148,7 +148,7 @@ const StatisticsPage = () => {
           <h3 className="text-sm font-medium text-gray-700">Last 7 Days</h3>
           <div className="space-y-2">
             {dailyGoalStats.recent7Days.map((day, index) => {
-              const date = new Date(day.date);
+              const date = parseLocalDateKey(day.date) || new Date(day.date);
               const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
               const percentage = day.targetMinutes > 0 ? Math.round((day.actualMinutes / day.targetMinutes) * 100) : 0;
               
@@ -238,7 +238,7 @@ const StatisticsPage = () => {
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
                       <span className="font-medium text-gray-800">{subject.name}</span>
-                      {subject.deadline && new Date(subject.deadline) < new Date() && (
+                      {subject.deadline && (parseLocalDateKey(subject.deadline) || new Date(subject.deadline)) < new Date() && (
                         <span className="px-2 py-1 bg-red-100 text-red-800 text-xs font-medium rounded-full">
                           Overdue
                         </span>
@@ -251,7 +251,7 @@ const StatisticsPage = () => {
                     <div className="flex-1 bg-gray-200 rounded-full h-2">
                       <div 
                         className={`h-2 rounded-full transition-all duration-300 ${
-                          subject.deadline && new Date(subject.deadline) < new Date() ? 'bg-red-600' : 'bg-green-600'
+                          subject.deadline && (parseLocalDateKey(subject.deadline) || new Date(subject.deadline)) < new Date() ? 'bg-red-600' : 'bg-green-600'
                         }`}
                         style={{ width: `${progress}%` }}
                       />
@@ -264,7 +264,7 @@ const StatisticsPage = () => {
                   {subject.deadline && (
                     <div className="mt-2 text-sm text-gray-500">
                       <Calendar className="w-4 h-4 inline mr-1" />
-                      Deadline: {new Date(subject.deadline).toLocaleDateString()}
+                      Deadline: {parseLocalDateKey(subject.deadline)?.toLocaleDateString() || subject.deadline}
                     </div>
                   )}
                 </div>

@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { useRoadmap } from '../context/RoadmapContext';
+import { safeStorageGet, safeStorageSet } from '../utils/storage';
 import { Settings2, Clock, RotateCcw, AlertTriangle, Trash2, Sun, Moon, Target, MessageSquare, Send } from 'lucide-react';
 
 const SettingsPage = () => {
-  const { settings, updateSettings, resetProgress, isDarkMode, toggleTheme } = useRoadmap();
+  const { settings, updateSettings, resetProgress, resetDailyProgress, resetEverything, isDarkMode, toggleTheme } = useRoadmap();
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [resetType, setResetType] = useState('daily');
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
@@ -11,24 +12,44 @@ const SettingsPage = () => {
   const [feedbackText, setFeedbackText] = useState('');
   const [feedbackEmail, setFeedbackEmail] = useState('');
   const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
-  const [tempSettings, setTempSettings] = useState(settings || {
-    dailyLearningHours: 2,
-    dailyGoalHours: 2,
-    pomodoroWorkDuration: 25,
-    pomodoroBreakDuration: 5
-  });
+  const [savedSection, setSavedSection] = useState(null);
+  const [tempSettings, setTempSettings] = useState(() => ({
+    dailyLearningHours: settings?.dailyLearningHours ?? settings?.dailyGoalHours ?? 2,
+    dailyGoalHours: settings?.dailyGoalHours ?? settings?.dailyLearningHours ?? 2,
+    dailyGoalSessions: settings?.dailyGoalSessions ?? 4,
+    pomodoroWorkDuration: settings?.pomodoroWorkDuration ?? 25,
+    pomodoroBreakDuration: settings?.pomodoroBreakDuration ?? settings?.pomodoroShortBreak ?? 5,
+    pomodoroShortBreak: settings?.pomodoroBreakDuration ?? settings?.pomodoroShortBreak ?? 5,
+    pomodoroLongBreakDuration: settings?.pomodoroLongBreakDuration ?? settings?.pomodoroLongBreak ?? 15,
+    pomodoroLongBreak: settings?.pomodoroLongBreakDuration ?? settings?.pomodoroLongBreak ?? 15
+  }));
 
-  const handleSaveSettings = () => {
+  React.useEffect(() => {
+    if (settings) {
+      setTempSettings(prev => ({
+        ...prev,
+        ...settings,
+        dailyLearningHours: settings.dailyLearningHours ?? settings.dailyGoalHours ?? prev.dailyLearningHours,
+        dailyGoalHours: settings.dailyGoalHours ?? settings.dailyLearningHours ?? prev.dailyGoalHours,
+        pomodoroBreakDuration: settings.pomodoroBreakDuration ?? settings.pomodoroShortBreak ?? prev.pomodoroBreakDuration,
+        pomodoroShortBreak: settings.pomodoroBreakDuration ?? settings.pomodoroShortBreak ?? prev.pomodoroShortBreak,
+        pomodoroLongBreakDuration: settings.pomodoroLongBreakDuration ?? settings.pomodoroLongBreak ?? prev.pomodoroLongBreakDuration,
+        pomodoroLongBreak: settings.pomodoroLongBreakDuration ?? settings.pomodoroLongBreak ?? prev.pomodoroLongBreak
+      }));
+    }
+  }, [settings]);
+
+  const handleSaveSettings = (section = 'all') => {
     updateSettings(tempSettings);
+    setSavedSection(section);
+    setTimeout(() => setSavedSection(null), 2000);
   };
 
   const handleResetProgress = () => {
     if (resetType === 'daily') {
-      // Reset daily progress - would need to implement daily tracking
-      console.log('Reset daily progress');
+      resetDailyProgress();
     } else {
-      // Reset all progress
-      resetProgress();
+      resetEverything ? resetEverything() : resetProgress();
     }
     setShowResetConfirm(false);
   };
@@ -49,10 +70,19 @@ const SettingsPage = () => {
       appVersion: '1.0.0'
     };
 
-    // Store feedback in localStorage for now (in production, this would send to a server)
-    const existingFeedback = JSON.parse(localStorage.getItem('userFeedback') || '[]');
+    // Store feedback in localStorage (in production, this would send to a server)
+    const existingFeedback = safeStorageGet('userFeedback', []);
     existingFeedback.push(feedback);
-    localStorage.setItem('userFeedback', JSON.stringify(existingFeedback));
+    const result = safeStorageSet('userFeedback', existingFeedback);
+
+    if (!result.ok) {
+      alert(
+        result.error === 'quota'
+          ? 'This device is out of storage. Your feedback was not saved.'
+          : 'Your feedback could not be saved.'
+      );
+      return;
+    }
 
     // Show success message
     setFeedbackSubmitted(true);
@@ -70,10 +100,23 @@ const SettingsPage = () => {
   };
 
   const handleSettingChange = (key, value) => {
-    setTempSettings(prev => ({
-      ...prev,
-      [key]: parseInt(value) || 0
-    }));
+    const num = parseFloat(value) || 0;
+    setTempSettings(prev => {
+      const next = { ...prev, [key]: num };
+      if (key === 'pomodoroShortBreak' || key === 'pomodoroBreakDuration') {
+        next.pomodoroShortBreak = num;
+        next.pomodoroBreakDuration = num;
+      }
+      if (key === 'pomodoroLongBreak' || key === 'pomodoroLongBreakDuration') {
+        next.pomodoroLongBreak = num;
+        next.pomodoroLongBreakDuration = num;
+      }
+      if (key === 'dailyLearningHours' || key === 'dailyGoalHours') {
+        next.dailyLearningHours = num;
+        next.dailyGoalHours = num;
+      }
+      return next;
+    });
   };
 
   return (
@@ -179,13 +222,16 @@ const SettingsPage = () => {
           </div>
         </div>
 
-        <div className="mt-6">
+        <div className="mt-6 flex items-center gap-3">
           <button
-            onClick={handleSaveSettings}
+            onClick={() => handleSaveSettings('timer')}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
           >
             Save Timer Settings
           </button>
+          {savedSection === 'timer' && (
+            <span className="text-sm font-medium text-green-600">Saved!</span>
+          )}
         </div>
       </div>
 
@@ -238,13 +284,16 @@ const SettingsPage = () => {
           </div>
         </div>
 
-        <div className="mt-6">
+        <div className="mt-6 flex items-center gap-3">
           <button
-            onClick={handleSaveSettings}
+            onClick={() => handleSaveSettings('goals')}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
           >
             Save Daily Goals
           </button>
+          {savedSection === 'goals' && (
+            <span className="text-sm font-medium text-green-600">Saved!</span>
+          )}
         </div>
       </div>
 
@@ -262,8 +311,8 @@ const SettingsPage = () => {
                 <RotateCcw className="w-5 h-5 text-yellow-600" />
               </div>
               <div>
-                <div className="font-medium text-gray-800">Reset Daily Progress</div>
-                <div className="text-sm text-gray-500">Clear today's completed tasks and sessions</div>
+                <div className="font-medium text-gray-800">Reset Today's Activity</div>
+                <div className="text-sm text-gray-500">Clear today's completed tasks, sessions, and daily goal progress</div>
               </div>
             </div>
             <button
@@ -273,7 +322,7 @@ const SettingsPage = () => {
               }}
               className="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition-colors"
             >
-              Reset Daily
+              Reset Today's Activity
             </button>
           </div>
 
@@ -324,7 +373,7 @@ const SettingsPage = () => {
       <div className="bg-white rounded-lg border border-gray-200 p-6">
         <h2 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
           <MessageSquare className="w-5 h-5 text-blue-600" />
-          Send Feedback
+          Feedback
         </h2>
         
         <div className="space-y-4">
@@ -334,15 +383,15 @@ const SettingsPage = () => {
                 <MessageSquare className="w-5 h-5 text-blue-600" />
               </div>
               <div>
-                <div className="font-medium text-gray-800">Help Us Improve</div>
-                <div className="text-sm text-gray-500">Share your thoughts and suggestions for the next prototype</div>
+                <div className="font-medium text-gray-800">Feedback & Notes</div>
+                <div className="text-sm text-gray-500">Your feedback is saved locally on this device.</div>
               </div>
             </div>
             <button
               onClick={() => setShowFeedbackModal(true)}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
             >
-              Send Feedback
+              Save Feedback Locally
             </button>
           </div>
         </div>
@@ -354,7 +403,7 @@ const SettingsPage = () => {
           <div className="bg-white rounded-lg p-8 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             <div className="flex items-center gap-3 mb-6">
               <MessageSquare className="w-6 h-6 text-blue-600" />
-              <h3 className="text-xl font-semibold text-gray-800">Send Feedback</h3>
+              <h3 className="text-xl font-semibold text-gray-800">Feedback</h3>
             </div>
             
             {feedbackSubmitted ? (
@@ -362,8 +411,8 @@ const SettingsPage = () => {
                 <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
                   <Send className="w-8 h-8 text-green-600" />
                 </div>
-                <h4 className="text-lg font-semibold text-gray-800 mb-2">Thank You!</h4>
-                <p className="text-gray-600">Your feedback has been submitted successfully. We'll use it to improve the next prototype.</p>
+                <h4 className="text-lg font-semibold text-gray-800 mb-2">Saved!</h4>
+                <p className="text-gray-600">Your feedback has been saved locally on this device.</p>
               </div>
             ) : (
               <div className="space-y-4">
@@ -412,7 +461,7 @@ const SettingsPage = () => {
 
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                   <p className="text-sm text-blue-800">
-                    <strong>Your feedback matters!</strong> This helps us understand what real users need and prioritize improvements for the next prototype.
+                    <strong>Local Storage Notice:</strong> Your feedback is saved locally on this device and can be exported with your tracker data.
                   </p>
                 </div>
 
@@ -422,7 +471,7 @@ const SettingsPage = () => {
                     className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                   >
                     <Send className="w-4 h-4 inline mr-2" />
-                    Submit Feedback
+                    Save Feedback Locally
                   </button>
                   <button
                     onClick={() => setShowFeedbackModal(false)}
@@ -444,7 +493,7 @@ const SettingsPage = () => {
             <div className="flex items-center gap-3 mb-4">
               <AlertTriangle className="w-6 h-6 text-red-600" />
               <h3 className="text-xl font-semibold text-gray-800">
-                {resetType === 'daily' ? 'Reset Daily Progress?' : 'Reset All Progress?'}
+                {resetType === 'daily' ? "Reset Today's Activity?" : 'Reset All Progress?'}
               </h3>
             </div>
             
@@ -471,7 +520,7 @@ const SettingsPage = () => {
                     : 'bg-red-600 hover:bg-red-700'
                 }`}
               >
-                {resetType === 'daily' ? 'Reset Daily' : 'Reset Everything'}
+                {resetType === 'daily' ? "Reset Today's Activity" : 'Reset Everything'}
               </button>
               <button
                 onClick={() => setShowResetConfirm(false)}

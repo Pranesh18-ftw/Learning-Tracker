@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { CheckCircle2, X, Clock, Target } from 'lucide-react';
+import { getLocalDateKey } from '../utils/dateUtils';
 
 const TaskCompletionModal = ({ 
   isOpen, 
@@ -43,6 +44,7 @@ const TaskCompletionModal = ({
       subjectId,
       phaseId, 
       taskId,
+      subtaskId,
       notes,
       timeSpent: timeSpent ? parseFloat(timeSpent) : 25,
       difficulty,
@@ -58,6 +60,7 @@ const TaskCompletionModal = ({
       subjectId,
       phaseId,
       taskId,
+      subtaskId,
       postponeDate,
       notes,
       timeSpent: timeSpent ? parseFloat(timeSpent) : 25,
@@ -158,7 +161,7 @@ const TaskCompletionModal = ({
                   className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
                     errors.postponeDate ? 'border-red-500' : 'border-gray-300'
                   }`}
-                  min={new Date().toISOString().split('T')[0]}
+                  min={getLocalDateKey()}
                 />
                 {errors.postponeDate && (
                   <p className="text-red-500 text-sm mt-1">{errors.postponeDate}</p>
