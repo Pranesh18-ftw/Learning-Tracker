@@ -201,9 +201,9 @@ This project is open source and available under the MIT License.
 
 ## 🔗 Links
 
-- **Live Demo**: [https://learning-tracker.netlify.app](https://learning-tracker.netlify.app)
-- **GitHub Repository**: [Your GitHub Repo]
-- **Netlify Dashboard**: [Your Netlify Site]
+- **Live Demo (GitHub Pages)**: [https://pranesh18-ftw.github.io/Learning-Tracker/](https://pranesh18-ftw.github.io/Learning-Tracker/)
+- **Live Demo (Netlify)**: [https://learning-tracker.netlify.app](https://learning-tracker.netlify.app)
+- **GitHub Repository**: [https://github.com/Pranesh18-ftw/Learning-Tracker](https://github.com/Pranesh18-ftw/Learning-Tracker)
 
 ---
 
