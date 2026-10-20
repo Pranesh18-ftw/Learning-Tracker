@@ -28,6 +28,7 @@ if (typeof globalThis.TextDecoder === 'undefined' && typeof UtilTextDecoder !== 
 let _testAdminApp = null;
 let _testAdminAuth = null;
 let _testAdminFirestore = null;
+let _testAdminSubmoduleLoader = null;
 
 /**
  * Sanitizes error messages to prevent accidental credential or token leakage
@@ -41,20 +42,60 @@ export function sanitizeErrorMessage(message) {
 }
 
 /**
- * Dynamically loads modular firebase-admin submodules with compatibility fallback
- * for test environments (such as Jest 27 in CRA) that lack subpath exports mapping.
+ * Loads modular firebase-admin submodules via explicit static require paths
+ * with compatibility fallback for test environments (such as Jest 27 in CRA)
+ * that lack subpath exports mapping.
+ *
+ * Using explicit literal paths ensures AST bundlers (such as esbuild and
+ * Netlify zip-it-and-ship-it) can statically trace module dependencies.
  */
 export function loadAdminSubmodule(submodule) {
-  try {
-    // eslint-disable-next-line global-require, import/no-dynamic-require
-    return require(`firebase-admin/${submodule}`);
-  } catch (err) {
-    try {
-      // eslint-disable-next-line global-require, import/no-dynamic-require
-      return require(`firebase-admin/lib/${submodule}`);
-    } catch {
-      throw new Error(`Failed to load Firebase Admin submodule '${submodule}': ${sanitizeErrorMessage(err.message)}`);
+  if (_testAdminSubmoduleLoader) {
+    return _testAdminSubmoduleLoader(submodule);
+  }
+
+  switch (submodule) {
+    case 'app': {
+      try {
+        // eslint-disable-next-line global-require
+        return require('firebase-admin/app');
+      } catch (err) {
+        try {
+          // eslint-disable-next-line global-require
+          return require('firebase-admin/lib/app');
+        } catch {
+          throw new Error(`Failed to load Firebase Admin submodule 'app': ${sanitizeErrorMessage(err.message)}`);
+        }
+      }
     }
+    case 'auth': {
+      try {
+        // eslint-disable-next-line global-require
+        return require('firebase-admin/auth');
+      } catch (err) {
+        try {
+          // eslint-disable-next-line global-require
+          return require('firebase-admin/lib/auth');
+        } catch {
+          throw new Error(`Failed to load Firebase Admin submodule 'auth': ${sanitizeErrorMessage(err.message)}`);
+        }
+      }
+    }
+    case 'firestore': {
+      try {
+        // eslint-disable-next-line global-require
+        return require('firebase-admin/firestore');
+      } catch (err) {
+        try {
+          // eslint-disable-next-line global-require
+          return require('firebase-admin/lib/firestore');
+        } catch {
+          throw new Error(`Failed to load Firebase Admin submodule 'firestore': ${sanitizeErrorMessage(err.message)}`);
+        }
+      }
+    }
+    default:
+      throw new Error(`Failed to load Firebase Admin submodule '${sanitizeErrorMessage(String(submodule))}': Unsupported submodule. Must be 'app', 'auth', or 'firestore'.`);
   }
 }
 
@@ -332,6 +373,13 @@ export function setFirebaseAdminFirestoreForTest(firestore) {
   _testAdminFirestore = firestore;
 }
 
+export function setAdminSubmoduleLoaderForTest(loader) {
+  if (process.env.NODE_ENV !== 'test') {
+    throw new Error('Test hooks are forbidden outside test environment.');
+  }
+  _testAdminSubmoduleLoader = loader;
+}
+
 export function resetFirebaseAdminStateForTest() {
   if (process.env.NODE_ENV !== 'test') {
     throw new Error('Test hooks are forbidden outside test environment.');
@@ -339,6 +387,7 @@ export function resetFirebaseAdminStateForTest() {
   _testAdminApp = null;
   _testAdminAuth = null;
   _testAdminFirestore = null;
+  _testAdminSubmoduleLoader = null;
 
   try {
     const { getApps, deleteApp } = loadAdminSubmodule('app');

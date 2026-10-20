@@ -21,9 +21,11 @@ import {
   getFirebaseAdminStatus,
   getFirebaseAdminCredentials,
   sanitizeErrorMessage,
+  loadAdminSubmodule,
   setFirebaseAdminAppForTest,
   setFirebaseAdminAuthForTest,
   setFirebaseAdminFirestoreForTest,
+  setAdminSubmoduleLoaderForTest,
   resetFirebaseAdminStateForTest
 } from '../server/phone/firebaseAdminApp.js';
 import {
@@ -203,6 +205,7 @@ describe('Stage 2B.2: Firebase Admin Runtime & Modular SDK Integration Suite', (
         expect(() => setFirebaseAdminAppForTest({})).toThrow(/forbidden outside test environment/);
         expect(() => setFirebaseAdminAuthForTest({})).toThrow(/forbidden outside test environment/);
         expect(() => setFirebaseAdminFirestoreForTest({})).toThrow(/forbidden outside test environment/);
+        expect(() => setAdminSubmoduleLoaderForTest(() => {})).toThrow(/forbidden outside test environment/);
       } finally {
         process.env.NODE_ENV = savedEnv;
       }
@@ -416,6 +419,92 @@ describe('Stage 2B.2: Firebase Admin Runtime & Modular SDK Integration Suite', (
       await expect(repo.saveDevice({ deviceId: 'fail_dev_1' }))
         .rejects
         .toThrow(StorageUnconfiguredError);
+    });
+  });
+
+  // =========================================================================
+  // 8. STATIC SUBMODULE LOADING & SDK PACKAGING / AVAILABILITY
+  // =========================================================================
+  describe('Static Submodule Loading & SDK Availability', () => {
+    test('23. Loads each supported Firebase Admin submodule explicitly (app, auth, firestore)', () => {
+      const appModule = loadAdminSubmodule('app');
+      expect(appModule).toBeDefined();
+      expect(typeof appModule.initializeApp).toBe('function');
+      expect(typeof appModule.cert).toBe('function');
+      expect(typeof appModule.getApps).toBe('function');
+      expect(typeof appModule.getApp).toBe('function');
+
+      const authModule = loadAdminSubmodule('auth');
+      expect(authModule).toBeDefined();
+      expect(typeof authModule.getAuth).toBe('function');
+
+      const firestoreModule = loadAdminSubmodule('firestore');
+      expect(firestoreModule).toBeDefined();
+      expect(typeof firestoreModule.getFirestore).toBe('function');
+    });
+
+    test('24. Rejects unsupported submodule names clearly', () => {
+      expect(() => loadAdminSubmodule('database')).toThrow(
+        /Failed to load Firebase Admin submodule 'database': Unsupported submodule\. Must be 'app', 'auth', or 'firestore'\./
+      );
+      expect(() => loadAdminSubmodule('storage')).toThrow(
+        /Failed to load Firebase Admin submodule 'storage': Unsupported submodule\. Must be 'app', 'auth', or 'firestore'\./
+      );
+      expect(() => loadAdminSubmodule('messaging')).toThrow(
+        /Failed to load Firebase Admin submodule 'messaging': Unsupported submodule\. Must be 'app', 'auth', or 'firestore'\./
+      );
+      expect(() => loadAdminSubmodule('../secret')).toThrow(
+        /Unsupported submodule/
+      );
+    });
+
+    test('25. Reports SDK_NOT_AVAILABLE with storageConfigured: false when SDK submodule fails to load', async () => {
+      setAdminSubmoduleLoaderForTest(() => {
+        throw new Error("Cannot find module 'firebase-admin/app'\nRequire stack:\n- /var/task/netlify/functions/phone.js");
+      });
+
+      const status = getFirebaseAdminStatus();
+      expect(status.configured).toBe(false);
+      expect(status.state).toBe('SDK_NOT_AVAILABLE');
+      expect(status.sdkLoaded).toBe(false);
+      expect(status.hasCredentials).toBe(false);
+      expect(status.appInitialized).toBe(false);
+      expect(status.details).toContain("Cannot find module 'firebase-admin/app'");
+
+      const res = await handlePhoneApiRequest({
+        httpMethod: 'GET',
+        path: '/status'
+      });
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.status).toBe('OK');
+      expect(body.storageConfigured).toBe(false);
+      expect(body.storageState).toBe('SDK_NOT_AVAILABLE');
+      expect(body.storageDetails).toContain("Cannot find module 'firebase-admin/app'");
+      expect(body.databaseConnected).toBeNull();
+    });
+
+    test('26. SDK loads successfully but credentials are missing reports MISSING_CONFIGURATION with sdkLoaded: true', () => {
+      const status = getFirebaseAdminStatus();
+      expect(status.configured).toBe(false);
+      expect(status.state).toBe('MISSING_CONFIGURATION');
+      expect(status.sdkLoaded).toBe(true);
+      expect(status.hasCredentials).toBe(false);
+      expect(status.appInitialized).toBe(false);
+      expect(status.details).toBe('Firebase Admin credentials not set in environment');
+    });
+
+    test('27. No credential values are included in SDK loading or initialization error messages', () => {
+      setAdminSubmoduleLoaderForTest(() => {
+        throw new Error('Failure loading submodule with key -----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA0\n-----END RSA PRIVATE KEY-----\n and token devtok_mocksecret123');
+      });
+
+      const status = getFirebaseAdminStatus();
+      expect(status.state).toBe('SDK_NOT_AVAILABLE');
+      expect(status.details).not.toContain('MIIEowIBAAKCAQEA0');
+      expect(status.details).not.toContain('devtok_mocksecret123');
+      expect(status.details).toContain('[REDACTED_KEY]');
+      expect(status.details).toContain('[REDACTED_TOKEN]');
     });
   });
 });
