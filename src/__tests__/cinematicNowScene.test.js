@@ -53,7 +53,7 @@ describe('Cinematic Learning OS — NOW & SCENE Architecture', () => {
 
     expect(frames.length).toBeGreaterThan(0);
     expect(frames[0].name).toBe('Biasing fundamentals and load line analysis');
-    expect(frames[0].completed).toBe(true);
+    expect(frames[0].completed).toBe(false);
     expect(frames[1].name).toBe('Why does Q1 turn on?');
     expect(frames[1].completed).toBe(false);
   });

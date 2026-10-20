@@ -23,7 +23,7 @@ const iconMap = {
 };
 
 const AchievementNotification = () => {
-  const { newlyUnlocked, clearAchievementNotification } = useRoadmap();
+  const { newlyUnlocked, clearAchievementNotification } = useRoadmap() || {};
 
   const activeNotification = newlyUnlocked
     ? (typeof newlyUnlocked === 'string'

@@ -4,6 +4,7 @@ export const TAB_TO_PATH = {
   'learning-plan': '/learning-plan',
   stats: '/statistics',
   achievements: '/achievements',
+  trajectory: '/trajectory',
   settings: '/settings',
 };
 
@@ -13,5 +14,6 @@ export const PATH_TO_TAB = {
   '/learning-plan': 'learning-plan',
   '/statistics': 'stats',
   '/achievements': 'achievements',
+  '/trajectory': 'trajectory',
   '/settings': 'settings',
 };

@@ -90,3 +90,87 @@ export const compareDateKeys = (a, b) => {
 export const isSameDateKey = (a, b) => {
   return a === b;
 };
+
+export const getPreviousLocalDateKey = (dateKey = getLocalDateKey()) => {
+  return addDaysToDateKey(dateKey, -1);
+};
+
+export const getNextLocalDateKey = (dateKey = getLocalDateKey()) => {
+  return addDaysToDateKey(dateKey, 1);
+};
+
+export const getDailyFocusMinutes = (
+  sessionsList = [],
+  dateKey = getLocalDateKey()
+) => {
+  return (sessionsList || [])
+    .filter(session => {
+      const sDate = session.date
+        ? getLocalDateKey(session.date)
+        : (session.startedAt
+            ? getLocalDateKey(session.startedAt)
+            : (session.timestamp
+                ? getLocalDateKey(session.timestamp)
+                : (session.completedAt ? getLocalDateKey(session.completedAt) : null)));
+      return sDate === dateKey;
+    })
+    .reduce(
+      (total, session) =>
+        total +
+        Math.max(
+          0,
+          Number(session.durationMinutes || session.duration) || 0
+        ),
+      0
+    );
+};
+
+export const calculateStreak = (
+  sessionsList = [],
+  todayKey = getLocalDateKey()
+) => {
+  if (!Array.isArray(sessionsList) || sessionsList.length === 0) {
+    return 0;
+  }
+
+  // Filter out zero-minute sessions
+  const validSessions = sessionsList.filter(
+    session => Number(session.durationMinutes || session.duration || 0) > 0
+  );
+
+  const sessionDates = new Set(
+    validSessions
+      .map(session => {
+        if (session.date) return getLocalDateKey(session.date);
+        if (session.startedAt) return getLocalDateKey(session.startedAt);
+        if (session.timestamp) return getLocalDateKey(session.timestamp);
+        if (session.completedAt) return getLocalDateKey(session.completedAt);
+        return null;
+      })
+      .filter(Boolean)
+  );
+
+  if (sessionDates.size === 0) {
+    return 0;
+  }
+
+  let currentDate = todayKey;
+
+  // If the user has not studied today, allow the streak to remain alive based on yesterday.
+  if (!sessionDates.has(currentDate)) {
+    currentDate = addDaysToDateKey(currentDate, -1);
+
+    if (!sessionDates.has(currentDate)) {
+      return 0;
+    }
+  }
+
+  let streak = 0;
+
+  while (sessionDates.has(currentDate)) {
+    streak++;
+    currentDate = addDaysToDateKey(currentDate, -1);
+  }
+
+  return streak;
+};

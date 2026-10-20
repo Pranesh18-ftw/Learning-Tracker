@@ -249,3 +249,71 @@ code, kbd, samp, pre {
   background: rgba(37, 99, 235, 0.2);
   color: inherit;
 }
+
+.scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+/* ============================================================
+   KEYBOARD FOCUS ACCESSIBILITY
+   High-contrast visible focus rings without relying on defaults
+   ============================================================ */
+:focus-visible {
+  outline: 2px solid #2563EB;
+  outline-offset: 2px;
+}
+
+.dark :focus-visible {
+  outline-color: #60A5FA;
+}
+
+/* ============================================================
+   REDUCED MOTION SUPPORT
+   Respects learner preference: disables/minimizes decorative movement
+   without breaking functional timers or hiding controls
+   ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .anim-pop,
+  .anim-fade-in,
+  .anim-slide-left,
+  .anim-slide-up,
+  .pulse-ring-active::after,
+  .draw-check,
+  .animate-pulse,
+  .animate-ping {
+    animation: none !important;
+    transform: none !important;
+  }
+
+  .btn-tactile-coral:hover,
+  .btn-tactile-coral:active,
+  .btn-tactile-electric:hover,
+  .btn-tactile-electric:active,
+  .btn-tactile-emerald:hover,
+  .btn-tactile-emerald:active,
+  .btn-tactile-ghost:hover,
+  .btn-tactile-ghost:active,
+  .tile-tactile:hover {
+    transform: none !important;
+  }
+}
+
+/* ============================================================
+   RESPONSIVE LAYOUT INTEGRITY
+   Prevent unintended document horizontal overflow on narrow screens
+   ============================================================ */
+html, body {
+  max-width: 100vw;
+  overflow-x: clip;
+}

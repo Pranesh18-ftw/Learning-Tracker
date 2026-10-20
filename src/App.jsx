@@ -1,7 +1,7 @@
 import React from 'react';
 import { Routes, Route, useLocation, useNavigate } from 'react-router-dom';
-import { Upload } from 'lucide-react';
 import Topbar from './components/Topbar';
+import FocusSpace from './components/FocusSpace';
 import AchievementNotification from './components/AchievementNotification';
 import DashboardPage from './pages/DashboardPage';
 import RoadmapPage from './pages/RoadmapPage';
@@ -9,17 +9,55 @@ import LearningPlanPage from './pages/LearningPlanPage';
 import StatisticsPage from './pages/StatisticsPage';
 import SettingsPage from './pages/SettingsPage';
 import AchievementsPage from './pages/AchievementsPage';
+import TrajectoryPage from './pages/TrajectoryPage';
 import Onboarding from './onboarding/Onboarding';
 import CustomCursor from './components/CustomCursor';
 import { RoadmapProvider, useRoadmap } from './context/RoadmapContext';
 
+import ErrorBoundary from './components/ErrorBoundary';
 import { TAB_TO_PATH, PATH_TO_TAB } from './utils/navigation';
 export { TAB_TO_PATH, PATH_TO_TAB };
 
 function AppContent() {
-  const { showTutorial, completeTutorial, setTutorialStepNumber, isDarkMode, hasImportedRoadmap } = useRoadmap();
+  const {
+    showTutorial,
+    completeTutorial,
+    setTutorialStepNumber,
+    isDarkMode,
+    focusSession,
+    beginFocusRunning,
+    pauseFocusSession,
+    resumeFocusSession,
+    openReflectionSession,
+    commitFocusSession,
+    abandonFocusSession,
+    storageError,
+    setStorageError,
+    corruptedDataKeys = [],
+    dismissCorruptedNotice
+  } = useRoadmap();
   const location = useLocation();
   const navigate = useNavigate();
+
+  // If currently in Focus Mode, application enters the quiet focus space
+  if (focusSession) {
+    return (
+      <div className="min-h-screen bg-[#0B0F19] text-white">
+        <CustomCursor />
+        <ErrorBoundary fallbackTitle="Focus Space Error">
+          <FocusSpace
+            session={focusSession}
+            onBeginRunning={beginFocusRunning}
+            onPause={pauseFocusSession}
+            onResume={resumeFocusSession}
+            onOpenReflection={openReflectionSession}
+            onCommitEvidence={commitFocusSession}
+            onAbandon={abandonFocusSession}
+          />
+        </ErrorBoundary>
+      </div>
+    );
+  }
 
   // URL is authoritative
   const activeTab = PATH_TO_TAB[location.pathname] || 'dashboard';
@@ -29,11 +67,6 @@ function AppContent() {
   };
 
   const renderContent = () => {
-    // During tutorial without imported roadmap, only show roadmap page
-    if (showTutorial && !hasImportedRoadmap) {
-      return <RoadmapPage />;
-    }
-    
     switch (activeTab) {
       case 'dashboard':
         return <DashboardPage />;
@@ -45,6 +78,8 @@ function AppContent() {
         return <StatisticsPage />;
       case 'achievements':
         return <AchievementsPage />;
+      case 'trajectory':
+        return <TrajectoryPage />;
       case 'settings':
         return <SettingsPage />;
       default:
@@ -57,33 +92,48 @@ function AppContent() {
       <CustomCursor />
       <Topbar activeTab={activeTab} setActiveTab={setActiveTab} />
 
-      <main className="py-6 sm:py-8 px-4 sm:px-8 relative">
-        {/* Tutorial Restriction Overlay */}
-        {showTutorial && !hasImportedRoadmap && activeTab !== 'roadmap' && (
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm z-40 flex items-center justify-center p-6">
-            <div className={`text-center p-8 max-w-md border ${isDarkMode ? 'bg-[#1E1E1B] border-[#2C2B27] text-[#F4F0E7]' : 'bg-[#FAF8F3] border-[#D8D2C7] text-[#1C1C1A]'}`}>
-              <div className="w-12 h-12 border border-[#B84F2B]/40 flex items-center justify-center mx-auto mb-4">
-                <Upload className="w-5 h-5 text-[#B84F2B]" />
-              </div>
-              <h3 className="text-base font-serif italic mb-1">Set up your path</h3>
-              <p className="text-xs opacity-70 mb-5 font-sans">Please import your learning roadmap to begin.</p>
-              <button
-                onClick={() => setActiveTab('roadmap')}
-                className="px-4 py-2 bg-[#1C1C1A] dark:bg-[#F4F0E7] text-[#F4F0E7] dark:text-[#1C1C1A] text-xs font-mono tracking-wider uppercase hover:opacity-90 transition-opacity"
-              >
-                Go to Roadmap
-              </button>
-            </div>
-          </div>
-        )}
-        
-        <div className="max-w-6xl mx-auto">
-          {renderContent()}
+      {corruptedDataKeys.length > 0 && (
+        <div
+          role="alert"
+          className="bg-amber-500/10 border-b border-amber-500/20 text-amber-700 dark:text-amber-300 px-4 py-2 text-xs flex items-center justify-between"
+        >
+          <span className="min-w-0 break-words flex-1 pr-2">
+            We could not read part of your saved data ({corruptedDataKeys.join(', ')}). Your raw data has been safely preserved in local quarantine.
+          </span>
+          <button
+            onClick={() => dismissCorruptedNotice && dismissCorruptedNotice()}
+            className="text-amber-800 dark:text-amber-200 hover:underline ml-4 font-semibold shrink-0 cursor-pointer"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {storageError && (
+        <div
+          role="alert"
+          className="bg-rose-500/10 border-b border-rose-500/20 text-rose-700 dark:text-rose-300 px-4 py-2 text-xs flex items-center justify-between"
+        >
+          <span className="min-w-0 break-words flex-1 pr-2">{storageError}</span>
+          <button
+            onClick={() => setStorageError && setStorageError(null)}
+            className="text-rose-800 dark:text-rose-200 hover:underline ml-4 font-semibold shrink-0 cursor-pointer"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      <main className="py-6 sm:py-8 px-4 sm:px-8 relative w-full min-w-0">
+        <div className="max-w-6xl mx-auto min-w-0">
+          <ErrorBoundary key={activeTab} fallbackTitle={`Unable to display ${activeTab} view`}>
+            {renderContent()}
+          </ErrorBoundary>
         </div>
       </main>
 
       <AchievementNotification />
-      
+
       {showTutorial && (
         <Onboarding
           onComplete={completeTutorial}
@@ -103,6 +153,7 @@ function App() {
         <Route path="/learning-plan" element={<AppContent />} />
         <Route path="/statistics" element={<AppContent />} />
         <Route path="/achievements" element={<AppContent />} />
+        <Route path="/trajectory" element={<AppContent />} />
         <Route path="/settings" element={<AppContent />} />
         <Route path="*" element={<AppContent />} />
       </Routes>

@@ -12,9 +12,10 @@ import React, { useState } from 'react';
 const WorkspaceEvidence = ({ latestSession, totalSessionsCount = 0 }) => {
   const [isOpen, setIsOpen] = useState(false);
 
-  // If no sessions exist yet, provide a quiet, encouraging baseline
-  const noteText = latestSession?.notes || "Derived base-emitter threshold and saturation boundary without notes.";
-  const dateStr = latestSession?.date || "Yesterday";
+  if (!latestSession) return null;
+
+  const noteText = latestSession?.notes || "Completed without notes.";
+  const dateStr = latestSession?.date || "Recent";
   const duration = latestSession?.durationMinutes || 25;
   const difficulty = latestSession?.difficulty || "medium";
 
@@ -27,7 +28,7 @@ const WorkspaceEvidence = ({ latestSession, totalSessionsCount = 0 }) => {
       >
         <div className="flex items-baseline gap-2">
           <span className="font-mono text-[10px] tracking-wider uppercase text-[#B84F2B]">
-            LAST PROOF
+            LAST RECORD
           </span>
           <span className="opacity-30">·</span>
           <span className="font-serif italic text-xs sm:text-sm text-current/90 group-hover:text-[#B84F2B] transition-colors">
@@ -39,7 +40,7 @@ const WorkspaceEvidence = ({ latestSession, totalSessionsCount = 0 }) => {
           <span>{dateStr}</span>
           <span>·</span>
           <span className="text-[#B84F2B] group-hover:underline">
-            {isOpen ? '[ collapse archive ]' : '[ inspect proof → ]'}
+            {isOpen ? '[ collapse archive ]' : '[ inspect record → ]'}
           </span>
         </div>
       </div>
@@ -67,7 +68,7 @@ const WorkspaceEvidence = ({ latestSession, totalSessionsCount = 0 }) => {
             {/* What Was Right */}
             <div className="p-3 border border-current/10 bg-current/[0.01] space-y-1 sm:col-span-2">
               <span className="text-[9px] text-[#2F7558] block uppercase font-bold">
-                ✓ VERIFIED CAPABILITIES
+                ✓ RECORDED CAPABILITIES
               </span>
               <p className="font-sans text-xs opacity-80 leading-relaxed">
                 Physical mechanism was reconstructed without opening reference material. Governing circuit equation was properly stated.
