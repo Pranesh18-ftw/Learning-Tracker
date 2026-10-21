@@ -91,19 +91,27 @@ export function formatNormalizedTelemetryResponse(record) {
   if (!record) return null;
   const p = record.payload || {};
 
+  const toNullableNonNegativeNumber = (val) => {
+    return (typeof val === 'number' && Number.isFinite(val) && val >= 0) ? val : null;
+  };
+
+  const toNonNegativeNumberOrZero = (val) => {
+    return (typeof val === 'number' && Number.isFinite(val) && val >= 0) ? val : 0;
+  };
+
   return {
     id: `telem-${record.sessionId || record.summaryId}`,
     summaryId: record.summaryId,
     sessionId: record.sessionId,
     deviceId: record.deviceId,
-    intendedSeconds: p.intendedSeconds || 1500,
-    observedSeconds: p.observedSeconds || 1500,
-    interruptionCount: p.interruptionCount || 0,
-    interruptionSeconds: p.interruptionSeconds || 0,
-    referenceSeconds: p.referenceSeconds || 0,
-    distractionSeconds: p.distractionSeconds || 0,
-    unknownSeconds: p.unknownSeconds || 0,
-    longestUninterruptedSeconds: p.longestUninterruptedSeconds || 0,
+    intendedSeconds: toNullableNonNegativeNumber(p.intendedSeconds),
+    observedSeconds: toNullableNonNegativeNumber(p.observedSeconds),
+    interruptionCount: toNonNegativeNumberOrZero(p.interruptionCount),
+    interruptionSeconds: toNonNegativeNumberOrZero(p.interruptionSeconds),
+    referenceSeconds: toNonNegativeNumberOrZero(p.referenceSeconds),
+    distractionSeconds: toNonNegativeNumberOrZero(p.distractionSeconds),
+    unknownSeconds: toNonNegativeNumberOrZero(p.unknownSeconds),
+    longestUninterruptedSeconds: toNonNegativeNumberOrZero(p.longestUninterruptedSeconds),
     source: record.source || 'ANDROID_COMPANION_NATIVE',
     provenance: 'REAL_EXTERNAL_SOURCE',
     observedAt: record.observedAt,

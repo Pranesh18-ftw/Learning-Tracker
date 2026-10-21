@@ -8,7 +8,8 @@ import {
   BookOpen,
   Clock,
   Zap,
-  Smartphone
+  Smartphone,
+  RefreshCw
 } from 'lucide-react';
 import { ConceptSchematicGlyph } from './ConceptObject';
 import { resolveWhyItMatters } from '../utils/conceptRelationshipResolver';
@@ -16,6 +17,7 @@ import {
   isCompanionConnected,
   getTelemetryForSession,
   getTelemetryStatusForSession,
+  reconcileLateTelemetry,
   formatDuration,
   correctAppClassification
 } from '../services/focusIntegrityService';
@@ -71,11 +73,122 @@ const FocusSpace = ({
   const companionConnected = isCompanionConnected();
   const [companionTelemetry, setCompanionTelemetry] = useState(() => getTelemetryForSession(sessionId));
   const [telemetryStatus, setTelemetryStatus] = useState(() => getTelemetryStatusForSession(sessionId));
+  const [telemetrySyncState, setTelemetrySyncState] = useState(() => {
+    const existing = getTelemetryForSession(sessionId);
+    if (existing) return 'reconciled';
+    if (!companionConnected) return 'idle';
+    return 'pending';
+  });
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [telemetrySyncDiagnostic, setTelemetrySyncDiagnostic] = useState(null);
+  const syncTimeoutsRef = useRef([]);
 
+  // Bounded retries for late-arriving companion upload (at t=0s, 2.5s, 5s, 8s, 12s)
   useEffect(() => {
-    setCompanionTelemetry(getTelemetryForSession(sessionId));
+    const existing = getTelemetryForSession(sessionId);
+    setCompanionTelemetry(existing);
     setTelemetryStatus(getTelemetryStatusForSession(sessionId));
-  }, [sessionId, status]);
+
+    syncTimeoutsRef.current.forEach(clearTimeout);
+    syncTimeoutsRef.current = [];
+
+    if (existing) {
+      setTelemetrySyncState('reconciled');
+      setTelemetrySyncDiagnostic(null);
+      setIsSyncing(false);
+      return;
+    }
+
+    if (!companionConnected || status !== 'reflection' || !sessionId) {
+      setTelemetrySyncState('idle');
+      setTelemetrySyncDiagnostic(null);
+      setIsSyncing(false);
+      return;
+    }
+
+    let isCancelled = false;
+    setTelemetrySyncState('pending');
+    setTelemetrySyncDiagnostic(null);
+
+    const retryDelays = [0, 2500, 5000, 8000, 12000];
+
+    const attemptSync = async (attemptIndex) => {
+      if (isCancelled) return;
+      setIsSyncing(true);
+      try {
+        const result = await reconcileLateTelemetry(sessionId);
+        if (isCancelled) return;
+
+        if (result?.success && result.reconciled && result.telemetry) {
+          setCompanionTelemetry(result.telemetry);
+          setTelemetryStatus(TELEMETRY_STATUS.SOURCE_CONNECTED_WITH_DATA);
+          setTelemetrySyncState('reconciled');
+          setTelemetrySyncDiagnostic(null);
+          setIsSyncing(false);
+          return;
+        }
+
+        if (result?.success && !result.reconciled) {
+          setTelemetrySyncState('pending');
+          setTelemetrySyncDiagnostic(null);
+          setIsSyncing(false);
+
+          if (attemptIndex + 1 < retryDelays.length) {
+            const nextDelay = retryDelays[attemptIndex + 1] - retryDelays[attemptIndex];
+            const timeoutId = setTimeout(() => {
+              attemptSync(attemptIndex + 1);
+            }, nextDelay);
+            syncTimeoutsRef.current.push(timeoutId);
+          }
+          return;
+        }
+
+        // Unsuccessful (e.g. auth, 403, 404, 422, network)
+        setIsSyncing(false);
+        setTelemetrySyncState('error');
+        setTelemetrySyncDiagnostic(result?.error || 'Companion telemetry retrieval failed.');
+      } catch (err) {
+        if (isCancelled) return;
+        setIsSyncing(false);
+        setTelemetrySyncState('error');
+        setTelemetrySyncDiagnostic('Network connection unavailable.');
+      }
+    };
+
+    attemptSync(0);
+
+    return () => {
+      isCancelled = true;
+      syncTimeoutsRef.current.forEach(clearTimeout);
+      syncTimeoutsRef.current = [];
+    };
+  }, [sessionId, status, companionConnected]);
+
+  const handleManualSyncCheck = async () => {
+    if (!sessionId || !companionConnected || isSyncing) return;
+    setIsSyncing(true);
+    setTelemetrySyncDiagnostic(null);
+    try {
+      const result = await reconcileLateTelemetry(sessionId);
+      if (result?.success && result.reconciled && result.telemetry) {
+        setCompanionTelemetry(result.telemetry);
+        setTelemetryStatus(TELEMETRY_STATUS.SOURCE_CONNECTED_WITH_DATA);
+        setTelemetrySyncState('reconciled');
+        setTelemetrySyncDiagnostic(null);
+      } else if (result?.success && !result.reconciled) {
+        setTelemetrySyncState('pending');
+        setTelemetrySyncDiagnostic('No telemetry summary uploaded by companion phone yet.');
+      } else {
+        setTelemetrySyncState('error');
+        setTelemetrySyncDiagnostic(result?.error || 'Companion telemetry retrieval failed.');
+      }
+    } catch (err) {
+      setTelemetrySyncState('error');
+      setTelemetrySyncDiagnostic('Network connection unavailable.');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   const timerIntervalRef = useRef(null);
   const completedOnceRef = useRef(false);
@@ -426,13 +539,21 @@ const FocusSpace = ({
                   <Smartphone className="w-3.5 h-3.5" />
                   <span>FOCUS INTEGRITY EVIDENCE</span>
                 </div>
-                <span className="text-slate-500 text-[10px]">Verified Locally</span>
+                <span className="text-slate-500 text-[10px]">
+                  {companionTelemetry.provenance === 'REAL_EXTERNAL_SOURCE' ? 'Verified Server Telemetry' : 'Verified Locally'}
+                </span>
               </div>
 
-              {companionTelemetry.interruptionCount === 0 ? (
+              {companionTelemetry.observedSeconds === 0 || companionTelemetry.observedSeconds === null ? (
+                /* Honest display when 0s or missing observation window */
+                <div className="p-2.5 rounded-xl bg-slate-900/80 border border-amber-500/30 text-xs font-mono text-amber-300 flex items-center justify-between">
+                  <span>No phone usage observations recorded during session window</span>
+                  <span className="text-slate-400 text-[11px]">0s observed</span>
+                </div>
+              ) : companionTelemetry.interruptionCount === 0 ? (
                 /* Quiet line when zero interruptions detected */
                 <div className="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800 text-xs font-mono text-emerald-400 flex items-center justify-between">
-                  <span>✓ {formatDuration(companionTelemetry.longestUninterruptedSeconds || companionTelemetry.intendedSeconds)} uninterrupted</span>
+                  <span>✓ {formatDuration(companionTelemetry.longestUninterruptedSeconds ?? companionTelemetry.intendedSeconds ?? companionTelemetry.observedSeconds)} uninterrupted</span>
                   <span className="text-slate-400 text-[11px]">Zero phone interruptions observed</span>
                 </div>
               ) : (
@@ -442,7 +563,9 @@ const FocusSpace = ({
                     <div className="p-2 rounded-xl bg-slate-900 border border-slate-800">
                       <div className="text-[10px] font-mono uppercase text-slate-400 font-bold">Intended</div>
                       <div className="text-xs font-mono font-black text-white">
-                        {Math.round((companionTelemetry.intendedSeconds || targetMinutes * 60) / 60)} min
+                        {companionTelemetry.intendedSeconds != null
+                          ? `${Math.round(companionTelemetry.intendedSeconds / 60)} min`
+                          : `${targetMinutes} min`}
                       </div>
                     </div>
                     <div className="p-2 rounded-xl bg-slate-900 border border-slate-800">
@@ -529,14 +652,62 @@ const FocusSpace = ({
                 Observed phone events verified locally. No surveillance feed. Phone use is classified honestly without arbitrary focus scores.
               </div>
             </div>
-          ) : telemetryStatus === TELEMETRY_STATUS.SOURCE_CONNECTED_NO_DATA ? (
-            <div className="p-3.5 rounded-2xl bg-slate-950/70 border border-slate-800 flex items-center justify-between text-xs font-mono text-slate-400">
-              <div className="flex items-center gap-2">
-                <Smartphone className="w-3.5 h-3.5 text-slate-400" />
-                <span>Companion phone paired</span>
+          ) : companionConnected ? (
+            /* Companion phone connected - show truthful sync state */
+            telemetrySyncState === 'error' ? (
+              <div className="p-3.5 rounded-2xl bg-slate-950/70 border border-rose-500/30 flex items-center justify-between text-xs font-mono text-slate-300">
+                <div className="flex items-center gap-2">
+                  <Smartphone className="w-3.5 h-3.5 text-rose-400" />
+                  <span>Companion phone paired</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-rose-400 font-mono">
+                    {telemetrySyncDiagnostic || 'Telemetry retrieval failed'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleManualSyncCheck}
+                    disabled={isSyncing}
+                    className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-[10px] text-slate-200 border border-slate-700 flex items-center gap-1 transition-colors disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-2.5 h-2.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                    <span>Retry</span>
+                  </button>
+                </div>
               </div>
-              <span className="text-[10px] text-slate-500 font-mono">No telemetry observations recorded for this session</span>
-            </div>
+            ) : (
+              /* pending / waiting for upload / no observations recorded yet */
+              <div className="p-3.5 rounded-2xl bg-slate-950/70 border border-slate-800 flex items-center justify-between text-xs font-mono text-slate-400">
+                <div className="flex items-center gap-2">
+                  <Smartphone className={`w-3.5 h-3.5 ${isSyncing ? 'text-emerald-400 animate-pulse' : 'text-slate-400'}`} />
+                  <span>Companion phone paired</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  {isSyncing ? (
+                    <span className="flex items-center gap-1.5 text-[11px] text-slate-300 font-mono">
+                      <RefreshCw className="w-3 h-3 animate-spin text-emerald-400" />
+                      <span>Syncing telemetry from phone...</span>
+                    </span>
+                  ) : (
+                    <>
+                      <span className="text-[10px] text-slate-500 font-mono">
+                        {telemetrySyncDiagnostic || 'No telemetry observations recorded for this session'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleManualSyncCheck}
+                        disabled={isSyncing}
+                        className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-[10px] text-slate-300 border border-slate-700 flex items-center gap-1 transition-colors"
+                        title="Check if companion phone has uploaded session telemetry"
+                      >
+                        <RefreshCw className="w-2.5 h-2.5" />
+                        <span>Check status</span>
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            )
           ) : (
             <div className="p-3.5 rounded-2xl bg-slate-950/70 border border-slate-800 flex items-center justify-between text-xs font-mono text-slate-400">
               <div className="flex items-center gap-2">

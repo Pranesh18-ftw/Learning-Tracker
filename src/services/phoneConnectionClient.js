@@ -236,13 +236,24 @@ export async function relaySessionEnd(sessionId, outcome = {}) {
 }
 
 /**
- * Queries server to fetch and reconcile any late-arriving telemetry for a session
+ * Retrieves and reconciles telemetry for a specific Focus session from server (Stage 2A / 2B)
+ * Uses existing Firebase ID-token helper and authenticates against GET /focus-sessions/:sessionId/telemetry
  */
-export async function fetchAndReconcileSessionTelemetry(sessionId) {
-  if (!sessionId) return { success: false, telemetry: null };
+export async function getServerSessionTelemetry(sessionId) {
+  if (!sessionId) {
+    return { success: false, reason: 'INVALID_SESSION_ID', code: 'INVALID_SESSION_ID', error: 'Session ID is required.', telemetry: null };
+  }
 
   const authHeader = await getAuthHeader();
-  if (!authHeader) return { success: false, reason: 'LOCAL_MODE_UNAUTHENTICATED', telemetry: null };
+  if (!authHeader) {
+    return {
+      success: false,
+      reason: 'LOCAL_MODE_UNAUTHENTICATED',
+      code: 'UNAUTHENTICATED',
+      error: 'Sign in required to retrieve session telemetry from server.',
+      telemetry: null
+    };
+  }
 
   const url = `${getApiBaseUrl()}/focus-sessions/${encodeURIComponent(sessionId)}/telemetry`;
   try {
@@ -254,18 +265,59 @@ export async function fetchAndReconcileSessionTelemetry(sessionId) {
     });
 
     if (!res.ok) {
-      return { success: false, status: res.status, telemetry: null };
+      const errData = await res.json().catch(() => ({}));
+      let safeError = errData.error;
+      if (!safeError) {
+        if (res.status === 401) safeError = 'Sign in required to retrieve session telemetry.';
+        else if (res.status === 403) safeError = 'Access denied: Session belongs to a different account.';
+        else if (res.status === 404) safeError = 'Focus session not found on server.';
+        else if (res.status === 422) safeError = 'Telemetry rejected due to window drift.';
+        else safeError = `Server returned status ${res.status}.`;
+      }
+      return {
+        success: false,
+        status: res.status,
+        code: errData.code || `HTTP_${res.status}`,
+        reason: errData.code || `HTTP_${res.status}`,
+        error: safeError,
+        telemetry: null
+      };
     }
 
     const data = await res.json().catch(() => ({}));
+    if (data.reconciled && data.telemetry) {
+      return {
+        success: true,
+        reconciled: true,
+        reason: 'RECONCILED',
+        telemetry: data.telemetry,
+        idempotent: Boolean(data.idempotent)
+      };
+    }
+
     return {
       success: true,
-      reconciled: Boolean(data.reconciled),
-      telemetry: data.telemetry || null
+      reconciled: false,
+      reason: data.reason || 'NO_TELEMETRY_FOUND',
+      telemetry: null
     };
   } catch (err) {
-    return { success: false, reason: 'NETWORK_UNAVAILABLE', telemetry: null };
+    return {
+      success: false,
+      reason: 'NETWORK_UNAVAILABLE',
+      code: 'NETWORK_ERROR',
+      error: 'Network connection unavailable. Could not retrieve companion telemetry.',
+      telemetry: null
+    };
   }
+}
+
+/**
+ * Queries server to fetch and reconcile any late-arriving telemetry for a session
+ * (Alias for getServerSessionTelemetry)
+ */
+export async function fetchAndReconcileSessionTelemetry(sessionId) {
+  return getServerSessionTelemetry(sessionId);
 }
 
 /**

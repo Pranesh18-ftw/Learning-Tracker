@@ -40,7 +40,10 @@ import {
   notifyFocusStarted,
   notifyFocusEnded,
   notifyFocusCancelled,
-  getTelemetryForSession
+  getTelemetryForSession,
+  reconcileLateTelemetry,
+  isFocusIntegrityEnabled,
+  getPairedDevice
 } from '../services/focusIntegrityService';
 import { TELEMETRY_PROVENANCE } from '../shared/focusIntegrityProtocol';
 import {
@@ -2465,8 +2468,14 @@ export const RoadmapProvider = ({ children, initialSubjects }) => {
   };
 
   const openReflectionSession = () => {
+    if (focusSession?.sessionId) {
+      notifyFocusEnded(focusSession.sessionId);
+    }
     setFocusSession(prev => {
       if (!prev) return null;
+      if (prev.sessionId && prev.sessionId !== focusSession?.sessionId) {
+        notifyFocusEnded(prev.sessionId);
+      }
       const maxRemainingMs = prev.sessionStartTime && prev.sessionEndTime
         ? Math.max(0, prev.sessionEndTime - prev.sessionStartTime)
         : (typeof prev.timeLeftSeconds === 'number' ? prev.timeLeftSeconds : prev.targetMinutes * 60) * 1000;
@@ -2610,6 +2619,16 @@ export const RoadmapProvider = ({ children, initialSubjects }) => {
 
       if (focusSession.sessionId) {
         notifyFocusEnded(focusSession.sessionId);
+        // Late upload recovery: If companion telemetry hasn't arrived by reflection commit, schedule bounded checks
+        if (!companionTelemetry && isFocusIntegrityEnabled() && getPairedDevice()) {
+          const sid = focusSession.sessionId;
+          setTimeout(() => {
+            reconcileSessionTelemetryFromServer(sid).catch(() => {});
+          }, 4000);
+          setTimeout(() => {
+            reconcileSessionTelemetryFromServer(sid).catch(() => {});
+          }, 12000);
+        }
       }
 
       setAdaptiveTick(t => t + 1);
@@ -2660,6 +2679,22 @@ export const RoadmapProvider = ({ children, initialSubjects }) => {
       setAdaptiveTick(t => t + 1);
     }
     return didReconcile;
+  };
+
+  /**
+   * Fetches late-arriving telemetry from server and reconciles with committed session
+   */
+  const reconcileSessionTelemetryFromServer = async (sessionId) => {
+    if (!sessionId) return { success: false, reason: 'INVALID_SESSION_ID', telemetry: null };
+    try {
+      const result = await reconcileLateTelemetry(sessionId);
+      if (result?.success && result.reconciled && result.telemetry) {
+        reconcileSessionTelemetry(sessionId, result.telemetry);
+      }
+      return result;
+    } catch (err) {
+      return { success: false, reason: 'EXCEPTION', error: err?.message, telemetry: null };
+    }
   };
 
   // Comprehensive stats for dashboard and statistics views
@@ -2890,6 +2925,7 @@ export const RoadmapProvider = ({ children, initialSubjects }) => {
         commitFocusSession,
         abandonFocusSession,
         reconcileSessionTelemetry,
+        reconcileSessionTelemetryFromServer,
 
         // Notes management
         notes,

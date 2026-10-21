@@ -24,7 +24,8 @@ import {
 import {
   relaySessionStart,
   relaySessionEnd,
-  fetchAndReconcileSessionTelemetry
+  fetchAndReconcileSessionTelemetry,
+  getServerSessionTelemetry
 } from './phoneConnectionClient';
 
 const STORAGE_KEY_PAIRED_DEVICE = 'learningTracker_companionDevice';
@@ -480,14 +481,24 @@ export function notifyFocusCancelled(sessionId) {
  * Queries server to reconcile any late-arriving telemetry for a session
  */
 export async function reconcileLateTelemetry(sessionId) {
-  if (!sessionId) return null;
-  const result = await fetchAndReconcileSessionTelemetry(sessionId);
-  if (result.success && result.telemetry) {
-    recordFocusTelemetry(result.telemetry);
-    return result.telemetry;
+  if (!sessionId) {
+    return { success: false, reason: 'INVALID_SESSION_ID', code: 'INVALID_SESSION_ID', error: 'Session ID is required.', telemetry: null };
   }
-  return null;
+  const result = await getServerSessionTelemetry(sessionId);
+  if (result.success && result.reconciled && result.telemetry) {
+    recordFocusTelemetry(result.telemetry);
+    return {
+      success: true,
+      reconciled: true,
+      reason: 'RECONCILED',
+      telemetry: result.telemetry,
+      idempotent: Boolean(result.idempotent)
+    };
+  }
+  return result;
 }
+
+export { getServerSessionTelemetry, fetchAndReconcileSessionTelemetry };
 
 /**
  * Formats seconds into human-readable minutes and seconds without fake scores
