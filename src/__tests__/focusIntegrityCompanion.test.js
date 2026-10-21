@@ -390,8 +390,8 @@ describe('Focus Integrity Companion Subsystem', () => {
       expect(container.textContent).not.toContain('Focus Score');
     });
 
-    test('IdentityDevicesAndPrivacy shows pairing code generation and app classification manager', () => {
-      act(() => {
+    test('IdentityDevicesAndPrivacy shows pairing code generation and app classification manager', async () => {
+      await act(async () => {
         root.render(
           <IdentityDevicesAndPrivacy
             onExportData={jest.fn()}

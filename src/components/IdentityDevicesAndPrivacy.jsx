@@ -13,7 +13,7 @@
  * - Additive Resiliency: Disconnecting phone preserves all learning continuity (Prompt #25)
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Laptop,
   Smartphone,
@@ -25,10 +25,12 @@ import {
   Settings2,
   Plus,
   QrCode,
-  ShieldAlert
+  ShieldAlert,
+  RefreshCw
 } from 'lucide-react';
 import {
   getPairedDevice,
+  setPairedDeviceRecord,
   unpairCompanionDevice,
   getAppOverrides,
   setAppOverride,
@@ -52,9 +54,44 @@ import { getOrCreateAccount } from '../services/accountIdentityService';
 import {
   startPairingSession,
   revokePairedDevice,
-  deletePhoneTelemetry
+  deletePhoneTelemetry,
+  listPairedDevices
 } from '../services/phoneConnectionClient';
 import GoogleSignInModal from './GoogleSignInModal';
+
+function formatLastSeen(timestamp) {
+  if (!timestamp) return 'Never';
+  const date = new Date(timestamp);
+  if (isNaN(date.getTime())) return 'Unknown';
+  const diffMs = Date.now() - date.getTime();
+  if (diffMs < 60 * 1000) return 'Just now';
+  if (diffMs < 60 * 60 * 1000) return `${Math.floor(diffMs / (60 * 1000))}m ago`;
+  if (diffMs < 24 * 60 * 60 * 1000) return `${Math.floor(diffMs / (60 * 60 * 1000))}h ago`;
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+function formatPairedAt(timestamp) {
+  if (!timestamp) return 'Unknown';
+  const date = new Date(timestamp);
+  if (isNaN(date.getTime())) return 'Unknown';
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+const mapServerDevice = (d) => ({
+  ...d,
+  deviceId: d.deviceId,
+  deviceAssociationId: d.deviceId,
+  deviceName: d.deviceName || 'Android Companion',
+  status: d.status || null,
+  protocolVersion: d.protocolVersion || 1,
+  pairedAt: d.pairedAt || null,
+  lastSeenAt: d.lastSeenAt || null,
+  hasUsageAccess: (d.hasUsageAccess !== undefined && d.hasUsageAccess !== null)
+    ? Boolean(d.hasUsageAccess)
+    : null,
+  isServerVerified: true,
+  source: 'server'
+});
 
 const IdentityDevicesAndPrivacy = ({
   connectedDevices = {},
@@ -69,9 +106,27 @@ const IdentityDevicesAndPrivacy = ({
     logoutAccount,
     deleteAccount
   } = roadmapContext;
+  const currentAccountId = account?.accountId || account?.externalAuthId || account?.uid || null;
   const [showSignInModal, setShowSignInModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [pairedDevice, setPairedDevice] = useState(() => getPairedDevice());
+  const initialLocal = getPairedDevice();
+  const [devices, setDevices] = useState(() => {
+    if (!initialLocal) return [];
+    if (initialLocal.ownerAccountId && currentAccountId && initialLocal.ownerAccountId !== currentAccountId) {
+      return [];
+    }
+    return [{
+      ...initialLocal,
+      deviceId: initialLocal.deviceId || initialLocal.deviceAssociationId,
+      deviceAssociationId: initialLocal.deviceAssociationId || initialLocal.deviceId,
+      isServerVerified: false,
+      source: 'local'
+    }];
+  });
+  const pairedDevice = devices[0] || null;
+  const [managingDevice, setManagingDevice] = useState(null);
+  const [isLoadingDevices, setIsLoadingDevices] = useState(false);
+  const [deviceSyncError, setDeviceSyncError] = useState(null);
   const [showPairingModal, setShowPairingModal] = useState(false);
   const [showManageModal, setShowManageModal] = useState(false);
   const [showConfirmReset, setShowConfirmReset] = useState(false);
@@ -85,11 +140,137 @@ const IdentityDevicesAndPrivacy = ({
   const [showDeleteTelemetryModal, setShowDeleteTelemetryModal] = useState(false);
   const [telemetryDeletedSuccess, setTelemetryDeletedSuccess] = useState(false);
 
-  // Sync state
+  const isMountedRef = useRef(true);
   useEffect(() => {
-    setPairedDevice(getPairedDevice());
-    setFocusIntegrityEnabledState(isFocusIntegrityEnabled());
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
   }, []);
+
+  const syncDevicesFromServer = useCallback(async () => {
+    if (!isMountedRef.current) return;
+    setIsLoadingDevices(true);
+    try {
+      const res = await listPairedDevices();
+      if (!isMountedRef.current) return;
+      if (res && res.success) {
+        setDeviceSyncError(null);
+        const activeDevices = (res.devices || []).filter(d => d.status !== 'revoked' && !d.revokedAt);
+        if (activeDevices.length > 0) {
+          // Case 1: Server returned active registered devices for this account
+          const mapped = activeDevices.map(d => ({
+            ...mapServerDevice(d),
+            ownerAccountId: currentAccountId
+          }));
+          setDevices(mapped);
+          setPairedDeviceRecord(mapped[0], currentAccountId);
+          setShowPairingModal(false);
+        } else {
+          // Case 2: Successful response with NO registered devices for this account
+          setDevices([]);
+          const currentLocal = getPairedDevice();
+          if (currentLocal) {
+            const isOwnedByCurrent = !currentLocal.ownerAccountId || (currentAccountId && currentLocal.ownerAccountId === currentAccountId);
+            if (isOwnedByCurrent) {
+              unpairCompanionDevice(currentAccountId);
+            }
+          }
+        }
+      } else {
+        // Case 3: Network or authentication failure
+        // Preserve existing local state as fallback where appropriate,
+        // but do not represent it as verified server registration
+        if (res?.error && res.error !== 'Authentication required.') {
+          setDeviceSyncError(res.error);
+        }
+        setDevices(prev => {
+          if (prev.length > 0) {
+            return prev.map(d => ({ ...d, isServerVerified: false }));
+          }
+          const local = getPairedDevice();
+          if (local) {
+            if (local.ownerAccountId && currentAccountId && local.ownerAccountId !== currentAccountId) {
+              return [];
+            }
+            return [{
+              ...local,
+              deviceId: local.deviceId || local.deviceAssociationId,
+              deviceAssociationId: local.deviceAssociationId || local.deviceId,
+              isServerVerified: false,
+              source: 'local'
+            }];
+          }
+          return prev;
+        });
+      }
+    } catch (err) {
+      if (!isMountedRef.current) return;
+      setDeviceSyncError('Network error connecting to phone service');
+      setDevices(prev => {
+        if (prev.length > 0) {
+          return prev.map(d => ({ ...d, isServerVerified: false }));
+        }
+        const local = getPairedDevice();
+        if (local) {
+          if (local.ownerAccountId && currentAccountId && local.ownerAccountId !== currentAccountId) {
+            return [];
+          }
+          return [{
+            ...local,
+            deviceId: local.deviceId || local.deviceAssociationId,
+            deviceAssociationId: local.deviceAssociationId || local.deviceId,
+            isServerVerified: false,
+            source: 'local'
+          }];
+        }
+        return prev;
+      });
+    } finally {
+      if (isMountedRef.current) {
+        setIsLoadingDevices(false);
+      }
+    }
+  }, [currentAccountId]);
+
+  // Sync state on mount
+  useEffect(() => {
+    syncDevicesFromServer();
+    setFocusIntegrityEnabledState(isFocusIntegrityEnabled());
+  }, [syncDevicesFromServer]);
+
+  // Bounded poll for newly completed pairing while pairing modal is open
+  useEffect(() => {
+    if (!showPairingModal) return;
+
+    let pollCount = 0;
+    const MAX_POLLS = 60; // 60 * 5s = 5m (matches pairing token lifetime)
+
+    const intervalId = setInterval(async () => {
+      pollCount += 1;
+      if (pollCount > MAX_POLLS) {
+        clearInterval(intervalId);
+        return;
+      }
+
+      try {
+        const res = await listPairedDevices();
+        if (res && res.success && Array.isArray(res.devices)) {
+          const active = res.devices.filter(d => d.status !== 'revoked' && !d.revokedAt);
+          if (active.length > 0) {
+            const mapped = active.map(mapServerDevice);
+            setDevices(mapped);
+            setPairedDeviceRecord(mapped[0]);
+            setShowPairingModal(false);
+          }
+        }
+      } catch {
+        // Quiet failure during background poll
+      }
+    }, 5000);
+
+    return () => clearInterval(intervalId);
+  }, [showPairingModal]);
 
   // Escape key dismissal for dialogs
   useEffect(() => {
@@ -149,26 +330,64 @@ const IdentityDevicesAndPrivacy = ({
 
 
   const handleSaveDeviceName = () => {
-    if (!pairedDevice || !deviceNameInput.trim()) return;
-    renameCompanionDevice(pairedDevice.deviceAssociationId, deviceNameInput.trim());
-    setPairedDevice(prev => ({ ...prev, deviceName: deviceNameInput.trim() }));
+    const target = managingDevice || pairedDevice;
+    if (!target || !deviceNameInput.trim()) return;
+    // Server-backed device names cannot be changed via server API
+    if (target.isServerVerified) {
+      return;
+    }
+    const id = target.deviceId || target.deviceAssociationId;
+    renameCompanionDevice(id, deviceNameInput.trim());
+    setDevices(prev => prev.map(d => {
+      if ((d.deviceId || d.deviceAssociationId) === id) {
+        return { ...d, deviceName: deviceNameInput.trim() };
+      }
+      return d;
+    }));
+    const currentLocal = getPairedDevice();
+    if (currentLocal && (currentLocal.deviceId === id || currentLocal.deviceAssociationId === id)) {
+      setPairedDeviceRecord({ ...currentLocal, deviceName: deviceNameInput.trim() }, currentAccountId);
+    }
     setShowManageModal(false);
+    setManagingDevice(null);
   };
 
-  const handleRevokeDevice = async () => {
-    if (!pairedDevice) return;
+  const handleRevokeDevice = async (deviceToRevoke) => {
+    const target = deviceToRevoke || managingDevice || pairedDevice;
+    if (!target) return;
+    const id = target.deviceId || target.deviceAssociationId;
     try {
-      await revokePairedDevice(pairedDevice.deviceAssociationId);
+      await revokePairedDevice(id);
     } catch {}
-    revokeCompanionDevice(pairedDevice.deviceAssociationId);
+    revokeCompanionDevice(id);
     unpairCompanionDevice();
-    setPairedDevice(null);
+    setDevices(prev => {
+      const remaining = prev.filter(d => (d.deviceId || d.deviceAssociationId) !== id);
+      if (remaining.length > 0) {
+        setPairedDeviceRecord(remaining[0]);
+      }
+      return remaining;
+    });
+    setManagingDevice(null);
     setShowManageModal(false);
   };
 
-  const handleUnpair = () => {
+  const handleUnpair = (deviceToUnpair) => {
+    const target = deviceToUnpair || managingDevice || pairedDevice;
+    const id = target ? (target.deviceId || target.deviceAssociationId) : null;
     unpairCompanionDevice();
-    setPairedDevice(null);
+    if (id) {
+      setDevices(prev => {
+        const remaining = prev.filter(d => (d.deviceId || d.deviceAssociationId) !== id);
+        if (remaining.length > 0) {
+          setPairedDeviceRecord(remaining[0]);
+        }
+        return remaining;
+      });
+    } else {
+      setDevices([]);
+    }
+    setManagingDevice(null);
     setShowManageModal(false);
     setShowPairingModal(false);
   };
@@ -308,15 +527,41 @@ const IdentityDevicesAndPrivacy = ({
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={handleOpenPairing}
-            className="px-3 py-1.5 rounded-xl border border-electric-300 dark:border-electric-700 bg-electric-50 dark:bg-electric-950/40 text-electric-700 dark:text-electric-300 hover:bg-electric-100 dark:hover:bg-electric-900/40 font-mono text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>{pairedDevice ? '+ Connect another phone' : 'Connect phone'}</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={syncDevicesFromServer}
+              disabled={isLoadingDevices}
+              className="px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 font-mono text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              title="Refresh device status from server"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoadingDevices ? 'animate-spin text-electric-500' : ''}`} />
+              <span className="hidden sm:inline">Refresh</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleOpenPairing}
+              className="px-3 py-1.5 rounded-xl border border-electric-300 dark:border-electric-700 bg-electric-50 dark:bg-electric-950/40 text-electric-700 dark:text-electric-300 hover:bg-electric-100 dark:hover:bg-electric-900/40 font-mono text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>{devices.length > 0 ? '+ Connect another phone' : 'Connect phone'}</span>
+            </button>
+          </div>
         </div>
+
+        {deviceSyncError && (
+          <div className="text-[11px] font-mono text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/30 px-3.5 py-2 rounded-xl border border-amber-200 dark:border-amber-800 flex items-center justify-between">
+            <span>Notice: {deviceSyncError} (offline / local fallback active)</span>
+            <button
+              type="button"
+              onClick={() => setDeviceSyncError(null)}
+              className="text-amber-500 hover:text-amber-700 dark:hover:text-amber-200 text-xs font-bold ml-2 cursor-pointer"
+            >
+              ✕
+            </button>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
 
@@ -342,40 +587,62 @@ const IdentityDevicesAndPrivacy = ({
             </div>
           </div>
 
-          {/* Mobile Companion (📱 Galaxy S25) */}
-          {pairedDevice ? (
-            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
-                  <Smartphone className="w-5 h-5" />
-                </div>
-                <div>
-                  <span className="text-xs font-mono font-bold text-slate-900 dark:text-white block">
-                    📱 {pairedDevice.deviceName || 'Galaxy S25'}
-                  </span>
-                  <div className="text-[10px] font-mono text-slate-400">
-                    Focus Integrity · <span className="text-amber-500 dark:text-amber-400 font-semibold">Registered (Connector Offline)</span>
+          {/* Mobile Companions (Server-backed or Local Fallback) */}
+          {devices.map((device) => {
+            const isVerified = device.isServerVerified !== false;
+            return (
+              <div
+                key={device.deviceId || device.deviceAssociationId}
+                className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex items-center justify-between"
+              >
+                <div className="flex items-center gap-3">
+                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${
+                    isVerified
+                      ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                      : 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
+                  }`}>
+                    <Smartphone className="w-5 h-5" />
                   </div>
-                  <div className="text-[10px] font-mono text-slate-400">
-                    Telemetry · <span className="text-slate-500">Awaiting companion connection</span>
+                  <div>
+                    <span className="text-xs font-mono font-bold text-slate-900 dark:text-white block">
+                      📱 {device.deviceName || 'Android Companion'}
+                    </span>
+                    <div className="text-[10px] font-mono text-slate-400">
+                      Focus Integrity · {isVerified ? (
+                        <span className="text-emerald-600 dark:text-emerald-400 font-semibold">Registered (Server Verified)</span>
+                      ) : (
+                        <span className="text-amber-500 dark:text-amber-400 font-semibold">Registered (Local Fallback · Unverified)</span>
+                      )}
+                    </div>
+                    <div className="text-[10px] font-mono text-slate-400">
+                      Activity · {device.lastSeenAt ? (
+                        <span className="text-slate-500">Last seen {formatLastSeen(device.lastSeenAt)}</span>
+                      ) : (
+                        <span className="text-slate-500">Awaiting companion connection</span>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setDeviceNameInput(pairedDevice.deviceName || 'Galaxy S25');
-                    setShowManageModal(true);
-                  }}
-                  className="px-3 py-1.5 rounded-xl border border-slate-300 dark:border-slate-600 hover:border-slate-400 text-xs font-mono font-bold text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
-                >
-                  Manage
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setManagingDevice(device);
+                      setDeviceNameInput(device.deviceName || 'Android Companion');
+                      setShowManageModal(true);
+                    }}
+                    className="px-3 py-1.5 rounded-xl border border-slate-300 dark:border-slate-600 hover:border-slate-400 text-xs font-mono font-bold text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
+                  >
+                    Manage
+                  </button>
+                </div>
               </div>
-            </div>
-          ) : (
+            );
+          })}
+
+          {/* No phone connected state */}
+          {devices.length === 0 && (
             <div className="p-4 rounded-2xl bg-slate-50/60 dark:bg-slate-800/30 border border-dashed border-slate-300 dark:border-slate-700 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-xl bg-slate-200 dark:bg-slate-700 text-slate-400 flex items-center justify-center">
@@ -684,6 +951,15 @@ const IdentityDevicesAndPrivacy = ({
               <div className="flex items-center gap-2">
                 <button
                   type="button"
+                  onClick={syncDevicesFromServer}
+                  disabled={isLoadingDevices}
+                  className="px-3 py-2 rounded-xl text-xs font-mono font-bold text-electric-600 dark:text-electric-400 hover:bg-electric-50 dark:hover:bg-electric-950/40 border border-electric-200 dark:border-electric-800 transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isLoadingDevices ? 'animate-spin' : ''}`} />
+                  <span>Check status</span>
+                </button>
+                <button
+                  type="button"
                   onClick={() => setShowPairingModal(false)}
                   className="px-4 py-2 rounded-xl text-xs font-mono font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                 >
@@ -696,7 +972,7 @@ const IdentityDevicesAndPrivacy = ({
       )}
 
       {/* ── DEVICE MANAGEMENT MODAL (Prompt #9) ── */}
-      {showManageModal && pairedDevice && (
+      {showManageModal && (managingDevice || pairedDevice) && (
         <div
           className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 anim-fade-in"
           role="dialog"
@@ -711,7 +987,10 @@ const IdentityDevicesAndPrivacy = ({
               </div>
               <button
                 type="button"
-                onClick={() => setShowManageModal(false)}
+                onClick={() => {
+                  setShowManageModal(false);
+                  setManagingDevice(null);
+                }}
                 className="p-1 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
                 aria-label="Close device manager"
               >
@@ -720,60 +999,114 @@ const IdentityDevicesAndPrivacy = ({
             </div>
 
             {/* Rename Device Input (Prompt #9) */}
-            <div className="space-y-1.5">
-              <label htmlFor="manage-device-name-input" className="text-xs font-mono text-slate-500">Device Name</label>
-              <div className="flex items-center gap-2">
-                <input
-                  id="manage-device-name-input"
-                  type="text"
-                  value={deviceNameInput}
-                  onChange={(e) => setDeviceNameInput(e.target.value)}
-                  placeholder="e.g. Galaxy S25"
-                  className="flex-1 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:border-electric-500"
-                />
-                <button
-                  type="button"
-                  onClick={handleSaveDeviceName}
-                  className="px-3 py-2 rounded-xl bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-xs font-mono font-bold text-slate-800 dark:text-slate-200"
-                >
-                  Save
-                </button>
-              </div>
-            </div>
+            {(() => {
+              const current = managingDevice || pairedDevice;
+              const isServerBacked = current?.isServerVerified !== false && current?.source === 'server';
+              return (
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label htmlFor="manage-device-name-input" className="text-xs font-mono text-slate-500">
+                      Device Name
+                    </label>
+                    {isServerBacked ? (
+                      <span className="text-[10px] font-mono text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded">
+                        Server-backed
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-mono text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded">
+                        Local-only
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      id="manage-device-name-input"
+                      type="text"
+                      value={deviceNameInput}
+                      onChange={(e) => setDeviceNameInput(e.target.value)}
+                      disabled={isServerBacked}
+                      placeholder="e.g. Galaxy S25"
+                      className={`flex-1 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-mono text-slate-900 dark:text-white focus:outline-none ${
+                        isServerBacked ? 'opacity-60 cursor-not-allowed' : 'focus:border-electric-500'
+                      }`}
+                    />
+                    <button
+                      type="button"
+                      onClick={handleSaveDeviceName}
+                      disabled={isServerBacked || !deviceNameInput.trim()}
+                      className="px-3 py-2 rounded-xl bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-xs font-mono font-bold text-slate-800 dark:text-slate-200 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      Save
+                    </button>
+                  </div>
+                  {isServerBacked ? (
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
+                      Renaming is disabled for server-backed devices because remote name updates are not supported by the phone API.
+                    </p>
+                  ) : (
+                    <p className="text-[11px] text-amber-600 dark:text-amber-400 font-mono">
+                      Local rename only. Changes apply to this browser workstation only.
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* Diagnostics (Prompt #9) */}
-            <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-xs font-mono space-y-2">
-              <div className="flex justify-between">
-                <span className="text-slate-400">Platform</span>
-                <span className="text-slate-800 dark:text-slate-200 font-bold">Android</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Status</span>
-                <span className="text-amber-500 dark:text-amber-400 font-bold">Registered (Connector Offline)</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Last Seen</span>
-                <span className="text-slate-500">Not connected</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Device ID</span>
-                <span className="text-[10px] text-slate-400 truncate max-w-[180px]">{pairedDevice.deviceAssociationId}</span>
-              </div>
-            </div>
+            {(() => {
+              const current = managingDevice || pairedDevice;
+              const isVerified = current.isServerVerified !== false;
+              return (
+                <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-xs font-mono space-y-2">
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Platform</span>
+                    <span className="text-slate-800 dark:text-slate-200 font-bold">Android</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Status</span>
+                    <span className={isVerified ? "text-emerald-600 dark:text-emerald-400 font-bold" : "text-amber-500 dark:text-amber-400 font-bold"}>
+                      {isVerified ? (current.status === 'revoked' ? 'Revoked' : 'Registered (Server Verified)') : "Registered (Local Fallback · Unverified)"}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Last Seen</span>
+                    <span className="text-slate-500">
+                      {current.lastSeenAt ? formatLastSeen(current.lastSeenAt) : 'Awaiting connection'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Paired</span>
+                    <span className="text-slate-500">{current.pairedAt ? formatPairedAt(current.pairedAt) : 'Unknown'}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Usage Access</span>
+                    <span className="text-slate-500">
+                      {current.hasUsageAccess === true ? 'Granted' : (current.hasUsageAccess === false ? 'Needed' : 'Unknown')}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Device ID</span>
+                    <span className="text-[10px] text-slate-400 truncate max-w-[180px] font-mono" title={current.deviceId || current.deviceAssociationId}>
+                      {current.deviceId || current.deviceAssociationId}
+                    </span>
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Action Buttons: Disconnect & Revoke (Prompt #9) */}
             <div className="space-y-2 pt-1">
               <div className="flex items-center gap-2 pt-1">
                 <button
                   type="button"
-                  onClick={handleUnpair}
+                  onClick={() => handleUnpair(managingDevice || pairedDevice)}
                   className="flex-1 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 font-mono text-xs font-bold transition-colors cursor-pointer"
                 >
                   Disconnect Phone
                 </button>
                 <button
                   type="button"
-                  onClick={handleRevokeDevice}
+                  onClick={() => handleRevokeDevice(managingDevice || pairedDevice)}
                   className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-mono text-xs font-bold transition-all shadow-sm cursor-pointer flex items-center justify-center gap-1"
                 >
                   <ShieldAlert className="w-3.5 h-3.5" />

@@ -79,6 +79,51 @@ export function getPairedDevice() {
 }
 
 /**
+ * Update or synchronize paired companion device record (Prompt #8 & #9)
+ */
+export function setPairedDeviceRecord(device, accountId = null) {
+  if (!device) {
+    safeStorageRemove(STORAGE_KEY_PAIRED_DEVICE);
+    return null;
+  }
+  const existing = safeStorageGet(STORAGE_KEY_PAIRED_DEVICE, null);
+  const targetId = device.deviceId || device.deviceAssociationId;
+  const isSameDevice = existing && (
+    existing.deviceId === targetId ||
+    existing.deviceAssociationId === targetId
+  );
+  const prev = isSameDevice ? existing : null;
+
+  let computedState = device.state || prev?.state;
+  if (!computedState) {
+    if (device.status === 'revoked') {
+      computedState = COMPANION_STATES.REVOKED;
+    } else if (device.hasUsageAccess === false) {
+      computedState = COMPANION_STATES.PERMISSION_NEEDED;
+    } else {
+      computedState = COMPANION_STATES.PAIRED;
+    }
+  }
+
+  const record = {
+    deviceAssociationId: device.deviceAssociationId || device.deviceId || targetId,
+    deviceId: device.deviceId || device.deviceAssociationId || targetId,
+    deviceName: device.deviceName || prev?.deviceName || 'Android Companion',
+    model: device.model !== undefined ? device.model : (prev?.model ?? null),
+    hasUsageAccess: (device.hasUsageAccess !== undefined && device.hasUsageAccess !== null)
+      ? Boolean(device.hasUsageAccess)
+      : (prev?.hasUsageAccess ?? null),
+    pairedAt: device.pairedAt || prev?.pairedAt || null,
+    lastSeenAt: device.lastSeenAt || prev?.lastSeenAt || null,
+    status: device.status || prev?.status || null,
+    state: computedState,
+    ownerAccountId: accountId || device.ownerAccountId || prev?.ownerAccountId || null
+  };
+  safeStorageSet(STORAGE_KEY_PAIRED_DEVICE, record);
+  return record;
+}
+
+/**
  * Check if Focus Integrity companion is paired and active
  */
 export function isCompanionConnected() {
@@ -132,7 +177,13 @@ export function confirmDevicePairing(token, deviceMetadata = {}) {
 /**
  * Unpair companion device
  */
-export function unpairCompanionDevice() {
+export function unpairCompanionDevice(forAccountId = null) {
+  if (forAccountId) {
+    const existing = safeStorageGet(STORAGE_KEY_PAIRED_DEVICE, null);
+    if (existing && existing.ownerAccountId && existing.ownerAccountId !== forAccountId) {
+      return { success: false, reason: 'ACCOUNT_MISMATCH' };
+    }
+  }
   safeStorageRemove(STORAGE_KEY_PAIRED_DEVICE);
   return { success: true };
 }
