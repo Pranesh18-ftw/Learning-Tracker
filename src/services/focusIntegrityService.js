@@ -125,11 +125,88 @@ export function setPairedDeviceRecord(device, accountId = null) {
 }
 
 /**
- * Check if Focus Integrity companion is paired and active
+ * Check if a Focus Integrity companion phone has been paired with this account/browser
+ */
+export function isCompanionPaired() {
+  const device = getPairedDevice();
+  return Boolean(device && (device.deviceAssociationId || device.deviceId) && device.status !== 'revoked');
+}
+
+/**
+ * Backward compatibility alias for isCompanionPaired.
+ * NOTE: "Connected" historically meant merely "paired". For live connectivity, use isCompanionReachable().
  */
 export function isCompanionConnected() {
+  return isCompanionPaired();
+}
+
+export const COMPANION_REACHABILITY_THRESHOLD_MS = 2 * 60 * 1000; // 2 minutes
+
+/**
+ * Checks if the companion device has reported a genuine, recent communication signal.
+ * Strict truthfulness: Pairing record alone never implies live connectivity.
+ */
+export function isCompanionReachable(maxAgeMs = COMPANION_REACHABILITY_THRESHOLD_MS) {
   const device = getPairedDevice();
-  return Boolean(device && device.deviceAssociationId);
+  if (!device || device.status === 'revoked') {
+    return false;
+  }
+  if (!device.lastSeenAt) {
+    return false;
+  }
+  const lastSeen = typeof device.lastSeenAt === 'number'
+    ? device.lastSeenAt
+    : new Date(device.lastSeenAt).getTime();
+  if (isNaN(lastSeen) || lastSeen <= 0) {
+    return false;
+  }
+  return (Date.now() - lastSeen) <= maxAgeMs;
+}
+
+let _lastSessionRelayStatus = {
+  relayed: false,
+  code: 'IDLE',
+  diagnostic: null,
+  sessionId: null,
+  status: null,
+  timestamp: null
+};
+const _relayListeners = new Set();
+
+export function getLastSessionRelayStatus() {
+  return { ..._lastSessionRelayStatus };
+}
+
+export function subscribeToSessionRelay(listener) {
+  if (typeof listener === 'function') {
+    _relayListeners.add(listener);
+    return () => _relayListeners.delete(listener);
+  }
+  return () => {};
+}
+
+function updateSessionRelayStatus(status) {
+  _lastSessionRelayStatus = {
+    ...status,
+    timestamp: Date.now()
+  };
+  for (const listener of _relayListeners) {
+    try {
+      listener(_lastSessionRelayStatus);
+    } catch (_) {}
+  }
+}
+
+export function resetSessionRelayStatusForTest() {
+  _lastSessionRelayStatus = {
+    relayed: false,
+    code: 'IDLE',
+    diagnostic: null,
+    sessionId: null,
+    status: null,
+    timestamp: null
+  };
+  _relayListeners.clear();
 }
 
 /**
@@ -211,9 +288,20 @@ export function setAppOverride(packageName, category) {
 
 /**
  * Broadcast: Focus Session Started
+ * Invariant: Non-blocking for local focus timer.
+ * Truthful diagnostics distinguish no paired device, unauthenticated state, HTTP rejection, and network failure.
  */
 export function notifyFocusStarted(session) {
-  if (!isCompanionConnected()) return null;
+  if (!isCompanionPaired()) {
+    updateSessionRelayStatus({
+      relayed: false,
+      code: 'NO_PAIRED_DEVICE',
+      diagnostic: 'No companion phone paired. Focus session running in local mode.',
+      sessionId: session?.id || session?.sessionId || null,
+      status: null
+    });
+    return null;
+  }
 
   const contract = {
     sessionId: session.id || session.sessionId || `session-${Date.now()}`,
@@ -227,6 +315,13 @@ export function notifyFocusStarted(session) {
   const validation = validateFocusSessionContract(contract);
   if (!validation.valid) {
     console.warn('Invalid FocusSessionContract', validation.error);
+    updateSessionRelayStatus({
+      relayed: false,
+      code: 'INVALID_SESSION',
+      diagnostic: validation.error,
+      sessionId: contract.sessionId,
+      status: null
+    });
     return null;
   }
 
@@ -236,9 +331,58 @@ export function notifyFocusStarted(session) {
     safeStorageSet(STORAGE_KEY_PAIRED_DEVICE, { ...device, state: COMPANION_STATES.SESSION_ACTIVE });
   }
 
-  // Non-blocking: relay session start to phone connection backend
-  relaySessionStart(contract).catch(() => {});
+  updateSessionRelayStatus({
+    relayed: false,
+    code: 'RELAY_IN_FLIGHT',
+    diagnostic: 'Relaying session start to server...',
+    sessionId: contract.sessionId,
+    status: null
+  });
 
+  // Non-blocking: relay session start to phone connection backend
+  const relayPromise = relaySessionStart(contract)
+    .then(result => {
+      let code = result.code;
+      let diagnostic = result.diagnostic;
+      if (result.relayed) {
+        code = 'SESSION_REGISTERED';
+        diagnostic = 'Focus session registered with companion relay.';
+      } else if (!code) {
+        if (result.reason === 'LOCAL_MODE_UNAUTHENTICATED') {
+          code = 'NO_AUTH_USER';
+          diagnostic = 'No authenticated Firebase user. Local focus active.';
+        } else if (result.reason === 'NETWORK_UNAVAILABLE') {
+          code = 'NETWORK_FAILURE';
+          diagnostic = 'Network error connecting to phone relay service.';
+        } else if (result.status) {
+          code = 'HTTP_REJECTED';
+          diagnostic = `Session start rejected by server with HTTP ${result.status}.`;
+        } else {
+          code = 'RELAY_FAILED';
+          diagnostic = result.reason || 'Session relay failed.';
+        }
+      }
+      updateSessionRelayStatus({
+        relayed: Boolean(result.relayed),
+        code,
+        status: result.status || null,
+        diagnostic,
+        sessionId: contract.sessionId
+      });
+      return result;
+    })
+    .catch(err => {
+      updateSessionRelayStatus({
+        relayed: false,
+        code: 'NETWORK_FAILURE',
+        status: null,
+        diagnostic: err?.message || 'Network error connecting to phone relay service.',
+        sessionId: contract.sessionId
+      });
+      return { relayed: false, code: 'NETWORK_FAILURE', diagnostic: err?.message };
+    });
+
+  contract.relayPromise = relayPromise;
   return contract;
 }
 

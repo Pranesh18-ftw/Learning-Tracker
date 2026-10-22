@@ -338,7 +338,7 @@ describe('Focus Integrity Companion Subsystem', () => {
       expect(container.textContent).toContain('Focus Integrity unavailable');
     });
 
-    test('FocusSpace ready screen shows "Focus Integrity: Phone Connected" when phone is paired (Prompt #35)', () => {
+    test('FocusSpace ready screen shows "Focus Integrity: Phone Paired" when phone is paired (Prompt #35)', () => {
       const token = generatePairingToken();
       confirmDevicePairing(token.token, { deviceName: 'Galaxy S25' });
 
@@ -355,7 +355,10 @@ describe('Focus Integrity Companion Subsystem', () => {
         root.render(<FocusSpace session={mockSession} />);
       });
 
-      expect(container.textContent).toContain('Focus Integrity: Phone Connected');
+      // Truthful label: pairing alone means "Phone Paired", never "Phone Connected"
+      expect(container.textContent).toContain('Focus Integrity: Phone Paired');
+      expect(container.textContent).not.toContain('Focus Integrity: Phone Connected');
+      expect(container.textContent).not.toContain('● Connected');
     });
 
     test('FocusSpace reflection screen renders honest evidence breakdown when telemetry exists', () => {

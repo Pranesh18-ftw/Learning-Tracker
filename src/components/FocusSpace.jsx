@@ -14,12 +14,16 @@ import {
 import { ConceptSchematicGlyph } from './ConceptObject';
 import { resolveWhyItMatters } from '../utils/conceptRelationshipResolver';
 import {
+  isCompanionPaired,
+  isCompanionReachable,
   isCompanionConnected,
   getTelemetryForSession,
   getTelemetryStatusForSession,
   reconcileLateTelemetry,
   formatDuration,
-  correctAppClassification
+  correctAppClassification,
+  getLastSessionRelayStatus,
+  subscribeToSessionRelay
 } from '../services/focusIntegrityService';
 import { APP_CATEGORIES, TELEMETRY_STATUS } from '../shared/focusIntegrityProtocol';
 
@@ -70,13 +74,26 @@ const FocusSpace = ({
 
   // Focus Integrity Companion Integration (Prompts #4, #25, #35)
   const sessionId = session.sessionId || session.id;
-  const companionConnected = isCompanionConnected();
+  const companionPaired = typeof isCompanionPaired === 'function' ? isCompanionPaired() : isCompanionConnected();
+  const companionReachable = typeof isCompanionReachable === 'function' ? isCompanionReachable() : false;
+  const [sessionRelayStatus, setSessionRelayStatus] = useState(() => (
+    typeof getLastSessionRelayStatus === 'function' ? getLastSessionRelayStatus() : null
+  ));
+
+  useEffect(() => {
+    if (typeof subscribeToSessionRelay === 'function') {
+      return subscribeToSessionRelay((status) => {
+        setSessionRelayStatus(status);
+      });
+    }
+  }, []);
+
   const [companionTelemetry, setCompanionTelemetry] = useState(() => getTelemetryForSession(sessionId));
   const [telemetryStatus, setTelemetryStatus] = useState(() => getTelemetryStatusForSession(sessionId));
   const [telemetrySyncState, setTelemetrySyncState] = useState(() => {
     const existing = getTelemetryForSession(sessionId);
     if (existing) return 'reconciled';
-    if (!companionConnected) return 'idle';
+    if (!companionPaired) return 'idle';
     return 'pending';
   });
   const [isSyncing, setIsSyncing] = useState(false);
@@ -99,7 +116,7 @@ const FocusSpace = ({
       return;
     }
 
-    if (!companionConnected || status !== 'reflection' || !sessionId) {
+    if (!companionPaired || status !== 'reflection' || !sessionId) {
       setTelemetrySyncState('idle');
       setTelemetrySyncDiagnostic(null);
       setIsSyncing(false);
@@ -162,10 +179,10 @@ const FocusSpace = ({
       syncTimeoutsRef.current.forEach(clearTimeout);
       syncTimeoutsRef.current = [];
     };
-  }, [sessionId, status, companionConnected]);
+  }, [sessionId, status, companionPaired]);
 
   const handleManualSyncCheck = async () => {
-    if (!sessionId || !companionConnected || isSyncing) return;
+    if (!sessionId || !companionPaired || isSyncing) return;
     setIsSyncing(true);
     setTelemetrySyncDiagnostic(null);
     try {
@@ -404,11 +421,17 @@ const FocusSpace = ({
 
           {/* Focus Integrity Status (Prompt #25 & #35) */}
           <div className="flex items-center justify-center gap-2 text-xs font-mono">
-            {companionConnected ? (
-              <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
-                <Smartphone className="w-3.5 h-3.5" />
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                <span>Focus Integrity: Phone Connected</span>
+            {companionPaired ? (
+              <div
+                className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-800/80 border border-slate-700 text-slate-300"
+                title={sessionRelayStatus?.diagnostic || undefined}
+              >
+                <Smartphone className={`w-3.5 h-3.5 ${companionReachable ? 'text-emerald-400' : 'text-slate-400'}`} />
+                <span className={`w-1.5 h-1.5 rounded-full ${companionReachable ? 'bg-emerald-400' : 'bg-slate-500'}`} />
+                <span>Focus Integrity: Phone Paired</span>
+                {companionReachable && (
+                  <span className="text-[10px] text-emerald-400 font-sans font-medium">(Active)</span>
+                )}
               </div>
             ) : (
               <div className="flex items-center gap-1.5 text-slate-500 text-[11px]">
@@ -652,8 +675,8 @@ const FocusSpace = ({
                 Observed phone events verified locally. No surveillance feed. Phone use is classified honestly without arbitrary focus scores.
               </div>
             </div>
-          ) : companionConnected ? (
-            /* Companion phone connected - show truthful sync state */
+          ) : companionPaired ? (
+            /* Companion phone paired - show truthful sync state */
             telemetrySyncState === 'error' ? (
               <div className="p-3.5 rounded-2xl bg-slate-950/70 border border-rose-500/30 flex items-center justify-between text-xs font-mono text-slate-300">
                 <div className="flex items-center gap-2">
@@ -712,7 +735,7 @@ const FocusSpace = ({
             <div className="p-3.5 rounded-2xl bg-slate-950/70 border border-slate-800 flex items-center justify-between text-xs font-mono text-slate-400">
               <div className="flex items-center gap-2">
                 <Smartphone className="w-3.5 h-3.5 text-slate-500" />
-                <span>Phone not connected</span>
+                <span>Phone not connected (Phone not paired)</span>
               </div>
               <span className="text-[10px] text-slate-500 font-mono">Phone telemetry unavailable</span>
             </div>
@@ -768,10 +791,10 @@ const FocusSpace = ({
           <span className="hidden sm:inline text-[11px] text-slate-500">
             {isPaused ? 'Session Paused' : 'Shield Active'}
           </span>
-          {companionConnected && (
-            <span className="hidden sm:flex items-center gap-1.5 text-[11px] text-emerald-400 font-mono">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              <span>Phone Connected</span>
+          {companionPaired && (
+            <span className="hidden sm:flex items-center gap-1.5 text-[11px] text-slate-300 font-mono">
+              <span className={`w-1.5 h-1.5 rounded-full ${companionReachable ? 'bg-emerald-400' : 'bg-slate-500'}`} />
+              <span>{companionReachable ? 'Phone Paired (Active)' : 'Phone Paired'}</span>
             </span>
           )}
           <button
@@ -904,10 +927,10 @@ const FocusSpace = ({
           </div>
 
           <div className="text-[11px] font-mono flex items-center gap-1.5">
-            {companionConnected ? (
-              <span className="text-emerald-400 flex items-center gap-1.5 font-bold">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                <span>● Connected</span>
+            {companionPaired ? (
+              <span className={`flex items-center gap-1.5 font-medium ${companionReachable ? 'text-slate-300' : 'text-slate-400'}`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${companionReachable ? 'bg-emerald-400' : 'bg-slate-500'}`} />
+                <span>{companionReachable ? '● Paired (Active)' : '● Paired'}</span>
               </span>
             ) : (
               <span className="text-slate-500 font-medium">Focus Integrity unavailable</span>

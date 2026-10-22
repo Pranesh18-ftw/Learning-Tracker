@@ -83,6 +83,210 @@ export function resetAuthLifecycleForTest() {
   _hasAuthResolvedOnce = false;
 }
 
+/**
+ * Helper to construct a normalized, non-sensitive readiness resolution object.
+ * Implements toString() and valueOf() returning the lifecycle state for full backward compatibility.
+ */
+function createAuthReadyResult({ ready, timedOut, state, user }) {
+  return {
+    ready: Boolean(ready),
+    timedOut: Boolean(timedOut),
+    state,
+    user: user || null,
+    toString() {
+      return this.state;
+    },
+    valueOf() {
+      return this.state;
+    }
+  };
+}
+
+/**
+ * Waits for initial Firebase Auth state resolution.
+ * Bounded by timeoutMs (default 2500ms) to ensure non-blocking operation.
+ *
+ * Strict Truthfulness Invariants:
+ * 1. Distinguishes successful authentication-state resolution from a timeout.
+ * 2. Never caches a timeout as a definitive SIGNED_OUT result.
+ * 3. Never sets _hasAuthResolvedOnce = true merely because readiness timed out.
+ * 4. Clears timers when readiness resolves and cleans up fallback listeners cleanly.
+ * 5. Returns an explicit, non-sensitive readiness result.
+ */
+export async function waitForAuthReady(timeoutMs = 2500) {
+  if (_hasAuthResolvedOnce) {
+    const auth = getFirebaseAuth();
+    return createAuthReadyResult({
+      ready: true,
+      timedOut: false,
+      state: _authLifecycleState,
+      user: auth?.currentUser || null
+    });
+  }
+
+  const auth = getFirebaseAuth();
+  if (!auth) {
+    _authLifecycleState = AUTH_LIFECYCLE_STATES.SIGNED_OUT;
+    _hasAuthResolvedOnce = true;
+    return createAuthReadyResult({
+      ready: true,
+      timedOut: false,
+      state: _authLifecycleState,
+      user: null
+    });
+  }
+
+  // If currentUser is already populated on the auth instance, auth has already resolved
+  if (auth.currentUser) {
+    _hasAuthResolvedOnce = true;
+    _authLifecycleState = AUTH_LIFECYCLE_STATES.AUTHENTICATED;
+    return createAuthReadyResult({
+      ready: true,
+      timedOut: false,
+      state: _authLifecycleState,
+      user: auth.currentUser
+    });
+  }
+
+  // 1. Try modern Firebase Web SDK authStateReady()
+  if (typeof auth.authStateReady === 'function') {
+    let timerId = null;
+    try {
+      const raceResult = await Promise.race([
+        auth.authStateReady().then(() => ({ timedOut: false })),
+        new Promise((resolve) => {
+          timerId = setTimeout(() => resolve({ timedOut: true }), timeoutMs);
+        })
+      ]);
+      if (timerId) clearTimeout(timerId);
+
+      if (raceResult.timedOut) {
+        // Readiness timed out before Firebase resolved:
+        // DO NOT set _hasAuthResolvedOnce = true
+        // DO NOT mutate _authLifecycleState to SIGNED_OUT
+        return createAuthReadyResult({
+          ready: false,
+          timedOut: true,
+          state: _authLifecycleState,
+          user: auth.currentUser || null
+        });
+      }
+
+      // authStateReady() resolved successfully
+      _hasAuthResolvedOnce = true;
+      _authLifecycleState = auth.currentUser
+        ? AUTH_LIFECYCLE_STATES.AUTHENTICATED
+        : AUTH_LIFECYCLE_STATES.SIGNED_OUT;
+
+      return createAuthReadyResult({
+        ready: true,
+        timedOut: false,
+        state: _authLifecycleState,
+        user: auth.currentUser || null
+      });
+    } catch (_) {
+      if (timerId) clearTimeout(timerId);
+      // Fall through to onAuthStateChanged fallback if authStateReady threw an unexpected error
+    }
+  }
+
+  // 2. Fallback: onAuthStateChanged listener with bounded timeout
+  return new Promise((resolve) => {
+    let resolved = false;
+    let timerId = null;
+    let unsubscribe = null;
+
+    const cleanup = () => {
+      if (timerId) {
+        clearTimeout(timerId);
+        timerId = null;
+      }
+      if (typeof unsubscribe === 'function') {
+        try {
+          unsubscribe();
+        } catch (_) {}
+        unsubscribe = null;
+      }
+    };
+
+    timerId = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        cleanup();
+        // TIMEOUT:
+        // DO NOT set _hasAuthResolvedOnce = true
+        // DO NOT mutate _authLifecycleState to SIGNED_OUT
+        resolve(
+          createAuthReadyResult({
+            ready: false,
+            timedOut: true,
+            state: _authLifecycleState,
+            user: auth.currentUser || null
+          })
+        );
+      }
+    }, timeoutMs);
+
+    try {
+      unsubscribe = onAuthStateChanged(
+        auth,
+        (firebaseUser) => {
+          if (!resolved) {
+            resolved = true;
+            cleanup();
+            _hasAuthResolvedOnce = true;
+            _authLifecycleState = firebaseUser
+              ? AUTH_LIFECYCLE_STATES.AUTHENTICATED
+              : AUTH_LIFECYCLE_STATES.SIGNED_OUT;
+            resolve(
+              createAuthReadyResult({
+                ready: true,
+                timedOut: false,
+                state: _authLifecycleState,
+                user: firebaseUser || null
+              })
+            );
+          }
+        },
+        () => {
+          if (!resolved) {
+            resolved = true;
+            cleanup();
+            _hasAuthResolvedOnce = true;
+            _authLifecycleState = AUTH_LIFECYCLE_STATES.SIGNED_OUT;
+            resolve(
+              createAuthReadyResult({
+                ready: true,
+                timedOut: false,
+                state: _authLifecycleState,
+                user: null
+              })
+            );
+          }
+        }
+      );
+
+      // In case onAuthStateChanged was invoked synchronously
+      if (resolved) {
+        cleanup();
+      }
+    } catch (_) {
+      if (!resolved) {
+        resolved = true;
+        cleanup();
+        resolve(
+          createAuthReadyResult({
+            ready: false,
+            timedOut: false,
+            state: _authLifecycleState,
+            user: auth.currentUser || null
+          })
+        );
+      }
+    }
+  });
+}
+
 export const AUTH_STATE_KEY = 'learningTracker_accountState';
 
 /**

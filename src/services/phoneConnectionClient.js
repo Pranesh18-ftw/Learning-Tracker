@@ -11,6 +11,7 @@
  */
 
 import { getFirebaseAuth } from './firebase';
+import { waitForAuthReady } from './authService';
 
 const DEFAULT_API_BASE = '/api/v1/phone';
 
@@ -34,22 +35,115 @@ export function resetAuthTokenProvider() {
   customAuthTokenProvider = null;
 }
 
-async function getAuthHeader() {
-  try {
-    if (typeof customAuthTokenProvider === 'function') {
+/**
+ * Retrieves authentication header with explicit, safe, non-sensitive diagnostics.
+ * Bounded wait for Firebase Auth readiness avoids silent failure during initial page loads.
+ */
+export async function getAuthHeaderWithDiagnostics(options = {}) {
+  const { waitForAuth = true, timeoutMs = 2500 } = options;
+
+  if (typeof customAuthTokenProvider === 'function') {
+    try {
       const customToken = await customAuthTokenProvider();
       if (customToken) {
-        return customToken.startsWith('Bearer ') ? customToken : `Bearer ${customToken}`;
+        return {
+          authHeader: customToken.startsWith('Bearer ') ? customToken : `Bearer ${customToken}`,
+          code: 'OK',
+          diagnostic: 'Authentication header acquired from custom provider.'
+        };
       }
-      return null;
+      return {
+        authHeader: null,
+        code: 'NO_AUTH_USER',
+        reason: 'LOCAL_MODE_UNAUTHENTICATED',
+        diagnostic: 'No authenticated user available from custom provider.'
+      };
+    } catch (err) {
+      return {
+        authHeader: null,
+        code: 'AUTH_TOKEN_FAILED',
+        reason: 'AUTH_TOKEN_FAILED',
+        diagnostic: 'Custom auth provider failed to return token.'
+      };
     }
-    const auth = getFirebaseAuth();
-    if (!auth || !auth.currentUser) return null;
-    const token = await auth.currentUser.getIdToken();
-    return token ? `Bearer ${token}` : null;
-  } catch (err) {
-    return null;
   }
+
+  const auth = getFirebaseAuth();
+  if (!auth) {
+    return {
+      authHeader: null,
+      code: 'NO_AUTH_USER',
+      reason: 'LOCAL_MODE_UNAUTHENTICATED',
+      diagnostic: 'No authenticated Firebase user (Firebase Auth is unconfigured or uninitialized).'
+    };
+  }
+
+  let authReadyResult = null;
+  if (waitForAuth) {
+    try {
+      authReadyResult = await waitForAuthReady(timeoutMs);
+    } catch (_) {
+      // Bounded wait fallback
+    }
+  }
+
+  // If readiness wait timed out before auth state resolved
+  if (authReadyResult && authReadyResult.timedOut && !auth.currentUser) {
+    return {
+      authHeader: null,
+      code: 'AUTH_TIMEOUT',
+      reason: 'AUTH_READINESS_TIMEOUT',
+      diagnostic: 'Firebase authentication readiness timed out.'
+    };
+  }
+
+  // If readiness initialization failed (neither ready nor timed out)
+  if (authReadyResult && authReadyResult.ready === false && !authReadyResult.timedOut && !auth.currentUser) {
+    return {
+      authHeader: null,
+      code: 'AUTH_READINESS_FAILED',
+      reason: 'AUTH_READINESS_FAILED',
+      diagnostic: 'Firebase authentication readiness failed to initialize.'
+    };
+  }
+
+  if (!auth.currentUser) {
+    return {
+      authHeader: null,
+      code: 'NO_AUTH_USER',
+      reason: 'LOCAL_MODE_UNAUTHENTICATED',
+      diagnostic: 'No authenticated Firebase user found.'
+    };
+  }
+
+  try {
+    const token = await auth.currentUser.getIdToken();
+    if (!token) {
+      return {
+        authHeader: null,
+        code: 'AUTH_TOKEN_FAILED',
+        reason: 'AUTH_TOKEN_FAILED',
+        diagnostic: 'Failed to acquire Firebase ID token.'
+      };
+    }
+    return {
+      authHeader: `Bearer ${token}`,
+      code: 'OK',
+      diagnostic: 'Authentication header acquired successfully.'
+    };
+  } catch (err) {
+    return {
+      authHeader: null,
+      code: 'AUTH_TOKEN_FAILED',
+      reason: 'AUTH_TOKEN_FAILED',
+      diagnostic: 'Error acquiring Firebase ID token.'
+    };
+  }
+}
+
+export async function getAuthHeader(options = {}) {
+  const result = await getAuthHeaderWithDiagnostics(options);
+  return result.authHeader;
 }
 
 /**
@@ -161,13 +255,24 @@ export async function revokePairedDevice(deviceId) {
 /**
  * Relays Focus session start to serverless backend (Non-blocking)
  */
-export async function relaySessionStart(session) {
-  if (!session || !session.sessionId) return { relayed: false, reason: 'INVALID_SESSION' };
+export async function relaySessionStart(session, options = {}) {
+  if (!session || !session.sessionId) {
+    return {
+      relayed: false,
+      code: 'INVALID_SESSION',
+      reason: 'INVALID_SESSION',
+      diagnostic: 'Session ID is missing or invalid.'
+    };
+  }
 
-  const authHeader = await getAuthHeader();
-  if (!authHeader) {
-    // Unauthenticated local user: perfectly normal, local focus runs without relay
-    return { relayed: false, reason: 'LOCAL_MODE_UNAUTHENTICATED' };
+  const authResult = await getAuthHeaderWithDiagnostics(options);
+  if (!authResult.authHeader) {
+    return {
+      relayed: false,
+      code: authResult.code || 'NO_AUTH_USER',
+      reason: authResult.reason || 'LOCAL_MODE_UNAUTHENTICATED',
+      diagnostic: authResult.diagnostic || 'No authenticated Firebase user. Local focus active.'
+    };
   }
 
   const url = `${getApiBaseUrl()}/focus-sessions/start`;
@@ -184,30 +289,62 @@ export async function relaySessionStart(session) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: authHeader
+        Authorization: authResult.authHeader
       },
       body: JSON.stringify(payload)
     });
 
     if (!res.ok) {
-      return { relayed: false, status: res.status };
+      return {
+        relayed: false,
+        code: 'HTTP_REJECTED',
+        reason: `HTTP_${res.status}`,
+        status: res.status,
+        diagnostic: `Session start rejected by server with HTTP ${res.status}.`
+      };
     }
+
     const data = await res.json().catch(() => ({}));
-    return { relayed: true, session: data.session };
+    return {
+      relayed: true,
+      code: 'SESSION_REGISTERED',
+      reason: 'SESSION_REGISTERED',
+      session: data.session,
+      diagnostic: 'Focus session registered with companion relay.'
+    };
   } catch (err) {
     // Non-blocking: network failures do not impact local Focus session
-    return { relayed: false, reason: 'NETWORK_UNAVAILABLE' };
+    return {
+      relayed: false,
+      code: 'NETWORK_FAILURE',
+      reason: 'NETWORK_UNAVAILABLE',
+      diagnostic: 'Network error connecting to phone relay service.'
+    };
   }
 }
 
 /**
  * Relays Focus session end to serverless backend (Non-blocking)
  */
-export async function relaySessionEnd(sessionId, outcome = {}) {
-  if (!sessionId) return { relayed: false };
+export async function relaySessionEnd(sessionId, outcome = {}, options = {}) {
+  if (!sessionId) {
+    return {
+      relayed: false,
+      code: 'INVALID_SESSION',
+      reason: 'INVALID_SESSION',
+      diagnostic: 'Session ID is missing.'
+    };
+  }
 
-  const authHeader = await getAuthHeader();
-  if (!authHeader) return { relayed: false, reason: 'LOCAL_MODE_UNAUTHENTICATED' };
+  const authResult = await getAuthHeaderWithDiagnostics(options);
+  if (!authResult.authHeader) {
+    return {
+      relayed: false,
+      code: authResult.code || 'NO_AUTH_USER',
+      reason: authResult.reason || 'LOCAL_MODE_UNAUTHENTICATED',
+      diagnostic: authResult.diagnostic || 'No authenticated Firebase user.'
+    };
+  }
 
   const url = `${getApiBaseUrl()}/focus-sessions/${encodeURIComponent(sessionId)}/end`;
   const payload = {
@@ -220,18 +357,36 @@ export async function relaySessionEnd(sessionId, outcome = {}) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: authHeader
+        Authorization: authResult.authHeader
       },
       body: JSON.stringify(payload)
     });
 
     if (!res.ok) {
-      return { relayed: false, status: res.status };
+      return {
+        relayed: false,
+        code: 'HTTP_REJECTED',
+        reason: `HTTP_${res.status}`,
+        status: res.status,
+        diagnostic: `Session end rejected by server with HTTP ${res.status}.`
+      };
     }
+
     const data = await res.json().catch(() => ({}));
-    return { relayed: true, session: data.session };
+    return {
+      relayed: true,
+      code: 'SESSION_ENDED',
+      reason: 'SESSION_ENDED',
+      session: data.session,
+      diagnostic: 'Focus session end recorded by companion relay.'
+    };
   } catch (err) {
-    return { relayed: false, reason: 'NETWORK_UNAVAILABLE' };
+    return {
+      relayed: false,
+      code: 'NETWORK_FAILURE',
+      reason: 'NETWORK_UNAVAILABLE',
+      diagnostic: 'Network error connecting to phone relay service.'
+    };
   }
 }
 
