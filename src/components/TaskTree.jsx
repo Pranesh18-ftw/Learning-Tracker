@@ -2,9 +2,24 @@ import React, { useState } from 'react';
 import { useRoadmap } from '../context/RoadmapContext';
 import { ChevronRight, ChevronDown, CheckCircle2, Trash2, Calendar } from 'lucide-react';
 import { getLocalDateKey, parseLocalDateKey } from '../utils/dateUtils';
+import {
+  getTaskProgress as canonicalGetTaskProgress,
+  getPhaseProgress as canonicalGetPhaseProgress,
+  getSubjectProgress as canonicalGetSubjectProgress
+} from '../utils/roadmapProgressResolver';
 
 const TaskTree = () => {
-  const { subjects, toggleSubtask, deleteSubject, updateSubjectDeadline, isTaskCompleted, toggleTaskCompletion } = useRoadmap();
+  const {
+    subjects,
+    toggleSubtask,
+    deleteSubject,
+    updateSubjectDeadline,
+    isTaskCompleted,
+    toggleTaskCompletion,
+    getTaskProgress: contextGetTaskProgress,
+    getPhaseProgress: contextGetPhaseProgress,
+    getSubjectProgress: contextGetSubjectProgress
+  } = useRoadmap();
   const [expandedSubjects, setExpandedSubjects] = useState(new Set());
   const [expandedPhases, setExpandedPhases] = useState(new Set());
   const [expandedTasks, setExpandedTasks] = useState(new Set());
@@ -77,26 +92,9 @@ const TaskTree = () => {
     }
   };
 
-  const getTaskProgress = (task) => {
-    if (!task.subtasks || task.subtasks.length === 0) {
-      return (isTaskCompleted ? isTaskCompleted(task) : task.completed) ? 100 : 0;
-    }
-    const completed = task.subtasks.filter(st => st.completed).length;
-    return Math.round((completed / task.subtasks.length) * 100);
-  };
-
-  const getPhaseProgress = (phase) => {
-    if (!phase.tasks || phase.tasks.length === 0) return 0;
-    const completed = phase.tasks.filter(t => (isTaskCompleted ? isTaskCompleted(t) : t.completed)).length;
-    return Math.round((completed / phase.tasks.length) * 100);
-  };
-
-  const getSubjectProgress = (subject) => {
-    const allSubjectTasks = (subject.phases || []).flatMap(p => p.tasks || []);
-    if (allSubjectTasks.length === 0) return 0;
-    const completed = allSubjectTasks.filter(t => (isTaskCompleted ? isTaskCompleted(t) : t.completed)).length;
-    return Math.round((completed / allSubjectTasks.length) * 100);
-  };
+  const getTaskProgress = contextGetTaskProgress || canonicalGetTaskProgress;
+  const getPhaseProgress = contextGetPhaseProgress || canonicalGetPhaseProgress;
+  const getSubjectProgress = contextGetSubjectProgress || canonicalGetSubjectProgress;
 
   return (
     <div className="space-y-4">
@@ -126,7 +124,7 @@ const TaskTree = () => {
               <div className="flex items-center gap-3">
                 <div className="flex items-center gap-2">
                   <div className="w-24 bg-gray-200 rounded-full h-2">
-                    <div 
+                    <div
                       className="bg-blue-600 h-2 rounded-full transition-all duration-300"
                       style={{ width: `${subjectProgress}%` }}
                     />
@@ -188,7 +186,7 @@ const TaskTree = () => {
                         </div>
                         <div className="flex items-center gap-2">
                           <div className="w-20 bg-gray-200 rounded-full h-2">
-                            <div 
+                            <div
                               className="bg-purple-600 h-2 rounded-full transition-all duration-300"
                               style={{ width: `${phaseProgress}%` }}
                             />
@@ -203,10 +201,10 @@ const TaskTree = () => {
                           {phase.tasks.map((task) => {
                             const isTaskExpanded = expandedTasks.has(task.id);
                             const taskProgress = getTaskProgress(task);
-                            const taskCompleted = isTaskCompleted 
-                              ? isTaskCompleted(task) 
-                              : (!task.subtasks || task.subtasks.length === 0 
-                                  ? task.completed 
+                            const taskCompleted = isTaskCompleted
+                              ? isTaskCompleted(task)
+                              : (!task.subtasks || task.subtasks.length === 0
+                                  ? task.completed
                                   : task.subtasks.every(st => st.completed));
                             const hasSubtasks = task.subtasks && task.subtasks.length > 0;
 
@@ -239,7 +237,7 @@ const TaskTree = () => {
                                       {task.name}
                                     </h5>
                                     <div className="text-sm text-gray-500 mt-1">
-                                      Progress: {taskProgress}% 
+                                      Progress: {taskProgress}%
                                       {hasSubtasks && (
                                         <span> ({task.subtasks?.filter(s => s.completed).length || 0}/{task.subtasks?.length || 0})</span>
                                       )}
@@ -247,7 +245,7 @@ const TaskTree = () => {
                                   </div>
                                   <div className="flex items-center gap-2">
                                     <div className="w-16 bg-gray-200 rounded-full h-2">
-                                      <div 
+                                      <div
                                         className={`h-2 rounded-full transition-all duration-300 ${
                                           taskCompleted ? 'bg-green-600' : 'bg-gray-600'
                                         }`}
@@ -274,8 +272,8 @@ const TaskTree = () => {
                                           className="w-4 h-4 text-green-600 rounded border-gray-300 focus:ring-green-500"
                                         />
                                         <span className={`flex-1 ${
-                                          subtask.completed 
-                                            ? 'text-green-600 line-through' 
+                                          subtask.completed
+                                            ? 'text-green-600 line-through'
                                             : 'text-gray-700'
                                         }`}>
                                           {subtask.name}
@@ -303,7 +301,7 @@ const TaskTree = () => {
               <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
                 <div className="bg-white rounded-lg p-8 max-w-md w-full">
                   <h3 className="text-xl font-semibold text-gray-800 mb-6">Set Subject Deadline</h3>
-                  
+
                   <div className="mb-6">
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Deadline Date:

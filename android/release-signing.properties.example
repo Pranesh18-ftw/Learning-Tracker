@@ -1,0 +1,19 @@
+# Learning Tracker Companion - Release Signing Configuration Example
+#
+# INSTRUCTIONS:
+# 1. Generate a dedicated release keystore:
+#    keytool -genkeypair -v -keystore release.keystore -alias companion-release -keyalg RSA -keysize 4096 -validity 10000
+#
+# 2. Copy this file to 'android/release-signing.properties' (ignored by Git):
+#    cp android/release-signing.properties.example android/release-signing.properties
+#
+# 3. Fill in your genuine keystore file path and passwords below.
+#
+# SECURITY WARNING:
+# NEVER commit 'release-signing.properties' or your .keystore/.jks files to Git.
+# They are explicitly excluded in .gitignore.
+
+RELEASE_STORE_FILE=../release.keystore
+RELEASE_STORE_PASSWORD=placeholder_keystore_password
+RELEASE_KEY_ALIAS=companion-release
+RELEASE_KEY_PASSWORD=placeholder_key_password

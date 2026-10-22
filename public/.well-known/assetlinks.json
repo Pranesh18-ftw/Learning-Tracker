@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.learningtracker.companion",
+      "sha256_cert_fingerprints": [
+        "4B:35:D5:79:29:F5:34:14:C0:69:AB:18:61:45:00:89:E6:2A:77:BB:84:21:F7:11:5C:8F:08:8C:41:2F:30:46"
+      ]
+    }
+  }
+]

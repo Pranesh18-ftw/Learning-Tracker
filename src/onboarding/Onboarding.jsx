@@ -1,225 +1,319 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { ArrowRight, X } from 'lucide-react';
+/**
+ * Onboarding.jsx
+ *
+ * Unified, Coherent Onboarding Experience for Learning Tracker.
+ *
+ * Replaces competing overlays with a single explicit state machine:
+ * ONBOARDING_IDLE -> ONBOARDING_WELCOME -> ONBOARDING_PATH_SETUP -> ONBOARDING_COMPLETE
+ *
+ * Guarantees:
+ * - Only ONE dialog active at a time.
+ * - Viewport-centered on desktop; safe-area aware responsive sheet/modal on mobile.
+ * - Prevents background page scrolling while active.
+ * - Clean transitions: Welcome -> Path Setup -> Application.
+ * - Respects learner choice: Can choose a curated path, explore freely, or dismiss anytime.
+ * - Works for first-time, returning, dismissed, authenticated, and anonymous learners.
+ * - Does NOT force Google authentication.
+ */
+
+import React, { useState, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router-dom';
+import {
+  Compass,
+  ArrowRight,
+  ArrowLeft,
+  X,
+  Cpu,
+  Layers,
+  ShieldCheck,
+  Sparkles,
+  CheckCircle2
+} from 'lucide-react';
 import { useRoadmap } from '../context/RoadmapContext';
+import { CURATED_ROADMAPS } from '../data/curatedRoadmaps';
+import { useDialogA11y } from '../utils/a11y';
+
+export const ONBOARDING_STATES = {
+  IDLE: 'ONBOARDING_IDLE',
+  WELCOME: 'ONBOARDING_WELCOME',
+  PATH_SETUP: 'ONBOARDING_PATH_SETUP',
+  COMPLETE: 'ONBOARDING_COMPLETE'
+};
 
 const Onboarding = ({ onComplete, onStepChange }) => {
-  const [position, setPosition] = useState({ top: 0, left: 0 });
-  const [arrowPosition, setArrowPosition] = useState({ top: 0, left: 0 });
-  const [targetRect, setTargetRect] = useState(null);
-  const { tutorialStep, hasImportedRoadmap, completeTutorial } = useRoadmap();
+  const roadmapContext = useRoadmap() || {};
+  const {
+    showTutorial,
+    hasImportedRoadmap,
+    completeTutorial,
+    importRoadmap
+  } = roadmapContext;
+  const navigate = useNavigate();
+  const modalContainerRef = useRef(null);
 
-  const getTargetElementId = (step) => {
-    switch (step) {
-      case 1:
-        return 'roadmap-nav-item';
-      case 2:
-        return 'import-roadmap-btn';
-      case 3:
-        return 'first-task-item';
-      default:
-        return '';
+  const [onboardingState, setOnboardingState] = useState(() => {
+    if (!showTutorial || hasImportedRoadmap) {
+      return ONBOARDING_STATES.IDLE;
     }
+    return ONBOARDING_STATES.WELCOME;
+  });
+
+  const handleDismiss = useCallback(() => {
+    setOnboardingState(ONBOARDING_STATES.COMPLETE);
+    if (completeTutorial) completeTutorial();
+    else if (onComplete) onComplete();
+  }, [completeTutorial, onComplete]);
+
+  const isOpen = onboardingState !== ONBOARDING_STATES.IDLE && onboardingState !== ONBOARDING_STATES.COMPLETE;
+  useDialogA11y({
+    isOpen,
+    onClose: handleDismiss,
+    containerRef: modalContainerRef
+  });
+
+  const handleProceedToPathSetup = () => {
+    setOnboardingState(ONBOARDING_STATES.PATH_SETUP);
+    if (onStepChange) onStepChange(2);
   };
 
-  const updatePosition = useCallback(() => {
-    const targetId = getTargetElementId(tutorialStep);
-    if (!targetId) {
-      setTargetRect(null);
-      return;
-    }
-
-    const element = document.getElementById(targetId);
-    if (!element) {
-      setTargetRect(null);
-      return;
-    }
-
-    const rect = element.getBoundingClientRect();
-    setTargetRect(rect);
-    setPosition({
-      top: rect.bottom + 10,
-      left: rect.left
-    });
-    setArrowPosition({
-      top: rect.top - 20,
-      left: rect.left + rect.width / 2 - 10
-    });
-  }, [tutorialStep]);
-
-  useEffect(() => {
-    updatePosition();
-    window.addEventListener('resize', updatePosition);
-    return () => window.removeEventListener('resize', updatePosition);
-  }, [updatePosition]);
-
-  // Auto-advance tutorial when roadmap is imported
-  useEffect(() => {
-    if (hasImportedRoadmap && tutorialStep < 3) {
-      onStepChange(3);
-    }
-  }, [hasImportedRoadmap, tutorialStep, onStepChange]);
-
-  const getTooltipContent = (step) => {
-    switch (step) {
-      case 1:
-        return {
-          title: "Step 1: Navigate to Roadmap",
-          text: "Click on the Roadmap tab to view your learning journey and import your study curriculum.",
-          icon: <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-bold">1</div>
-        };
-      case 2:
-        return {
-          title: "Step 2: Import Your Roadmap",
-          text: "Click the Import button to paste your curriculum JSON or use our sample template to get started.",
-          icon: <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-bold">2</div>
-        };
-      case 3:
-        return {
-          title: "Step 3: Track Your Progress",
-          text: "Check off subtasks as you finish studying. Your statistics and achievements will update automatically!",
-          icon: <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center text-green-600 font-bold">✓</div>
-        };
-      default:
-        return {
-          title: "Welcome to Learning Tracker!",
-          text: "Let's take a quick tour to get you started on your learning journey.",
-          icon: <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-bold">👋</div>
-        };
-    }
+  const handleBackToWelcome = () => {
+    setOnboardingState(ONBOARDING_STATES.WELCOME);
+    if (onStepChange) onStepChange(1);
   };
 
-  const handleNext = () => {
-    if (tutorialStep < 3) {
-      onStepChange(tutorialStep + 1);
-    } else {
-      onComplete();
+  const handleSelectCuratedTrack = (track) => {
+    if (importRoadmap && track) {
+      importRoadmap(track);
     }
+    setOnboardingState(ONBOARDING_STATES.COMPLETE);
+    if (completeTutorial) completeTutorial();
+    else if (onComplete) onComplete();
+    navigate('/roadmap');
   };
 
-  const handleSkip = () => {
-    if (hasImportedRoadmap) {
-      onComplete();
-    } else {
-      alert("Please import a roadmap before skipping the tutorial, or click 'Import Sample Roadmap' in the roadmap tab.");
-    }
+  const handleExploreKnowledgeWorld = () => {
+    setOnboardingState(ONBOARDING_STATES.COMPLETE);
+    if (completeTutorial) completeTutorial();
+    else if (onComplete) onComplete();
+    navigate('/roadmap');
   };
 
-  const tooltip = getTooltipContent(tutorialStep);
+  if (onboardingState === ONBOARDING_STATES.IDLE || onboardingState === ONBOARDING_STATES.COMPLETE) {
+    return null;
+  }
 
-  return (
-    <div className="fixed inset-0 z-50 pointer-events-none">
-      {/* Overlay with hole for target element - only rendered when targetRect exists */}
-      {targetRect && (
-        <div className="absolute inset-0 pointer-events-auto">
-          {/* Top overlay */}
-          <div 
-            className="absolute bg-black bg-opacity-50 left-0 right-0"
-            style={{ top: 0, height: `${Math.max(0, targetRect.top - 10)}px` }}
-          />
-          {/* Left overlay */}
-          <div 
-            className="absolute bg-black bg-opacity-50 top-0 bottom-0"
-            style={{ 
-              left: 0, 
-              width: `${Math.max(0, targetRect.left - 10)}px`,
-              top: `${Math.max(0, targetRect.top - 10)}px`,
-              height: `${targetRect.height + 20}px`
-            }}
-          />
-          {/* Right overlay */}
-          <div 
-            className="absolute bg-black bg-opacity-50 top-0 bottom-0"
-            style={{ 
-              left: `${targetRect.right + 10}px`,
-              right: 0,
-              top: `${Math.max(0, targetRect.top - 10)}px`,
-              height: `${targetRect.height + 20}px`
-            }}
-          />
-          {/* Bottom overlay */}
-          <div 
-            className="absolute bg-black bg-opacity-50 left-0 right-0"
-            style={{ 
-              top: `${targetRect.bottom + 10}px`,
-              bottom: 0
-            }}
-          />
-        </div>
-      )}
-      
-      {/* Arrow */}
-      {targetRect && tooltip.icon && (
-        <div
-          className="absolute z-50 pointer-events-none"
-          style={{
-            top: `${arrowPosition.top}px`,
-            left: `${arrowPosition.left}px`
-          }}
+  const modalContent = (
+    <div
+      ref={modalContainerRef}
+      id="onboarding-overlay-container"
+      className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-md flex items-center justify-center p-4 sm:p-6 overflow-y-auto"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="onboarding-modal-title"
+    >
+      <div className="w-full max-w-lg my-auto bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 shadow-2xl border-2 border-slate-200 dark:border-slate-800 space-y-6 relative max-h-[calc(100vh-2rem)] sm:max-h-[90vh] overflow-y-auto pb-[max(1.5rem,env(safe-area-inset-bottom))] anim-pop">
+
+        {/* Close / Dismiss Button */}
+        <button
+          type="button"
+          onClick={handleDismiss}
+          className="absolute top-5 right-5 p-1.5 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+          title="Dismiss onboarding"
+          aria-label="Close onboarding"
         >
-          <ArrowRight className="w-5 h-5 text-yellow-400 animate-bounce" />
-        </div>
-      )}
+          <X className="w-5 h-5" />
+        </button>
 
-      {/* Tooltip */}
-      <div
-        className="absolute z-50 bg-white rounded-lg shadow-lg p-6 max-w-sm pointer-events-auto"
-        style={{
-          top: targetRect ? `${position.top}px` : '40%',
-          left: targetRect ? `${position.left}px` : 'calc(50% - 180px)'
-        }}
-      >
-        <div className="flex items-start justify-between mb-4">
-          <div className="flex items-center gap-3">
-            {tooltip.icon}
-            <div>
-              <h3 className="font-semibold text-gray-900">{tooltip.title}</h3>
+        {/* ── STEP 1: ONBOARDING_WELCOME ── */}
+        {onboardingState === ONBOARDING_STATES.WELCOME && (
+          <div className="space-y-6" id="onboarding-step-welcome">
+            <div className="text-center space-y-3 pt-2">
+              <div className="w-14 h-14 rounded-2xl bg-electric-600 text-white flex items-center justify-center mx-auto shadow-md">
+                <Compass className="w-7 h-7" />
+              </div>
+
+              <div className="space-y-1">
+                <span className="text-[11px] font-mono font-bold uppercase tracking-widest text-electric-600 dark:text-electric-400">
+                  Welcome to Learning Tracker
+                </span>
+                <h2
+                  id="onboarding-modal-title"
+                  className="font-display font-black text-2xl sm:text-3xl text-slate-900 dark:text-white tracking-tight"
+                >
+                  Build Genuine Technical Capability
+                </h2>
+              </div>
+
+              <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 font-sans leading-relaxed max-w-sm mx-auto">
+                A first-principles, distraction-free environment to track your true understanding, calibrated to your authentic weekly time reality.
+              </p>
+            </div>
+
+            {/* Core Grounded Value Pillars */}
+            <div className="space-y-2.5 pt-1">
+              <div className="p-3 sm:p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 flex items-start gap-3">
+                <div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold text-sm shrink-0 mt-0.5">
+                  <CheckCircle2 className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-slate-900 dark:text-white">Grounded Learning Records</h4>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-normal mt-0.5">
+                    Track authentic learning progress, physical builds, and focus records without arbitrary gamification.
+                  </p>
+                </div>
+              </div>
+
+              <div className="p-3 sm:p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 flex items-start gap-3">
+                <div className="w-8 h-8 rounded-xl bg-electric-500/10 text-electric-600 dark:text-electric-400 flex items-center justify-center font-bold text-sm shrink-0 mt-0.5">
+                  <Sparkles className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-slate-900 dark:text-white">Authentic Time Planning</h4>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-normal mt-0.5">
+                    Plans adapt to your real weekdays, lab hours, and hardware constraints.
+                  </p>
+                </div>
+              </div>
+
+              <div className="p-3 sm:p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 flex items-start gap-3">
+                <div className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold text-sm shrink-0 mt-0.5">
+                  <ShieldCheck className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-slate-900 dark:text-white">Local-First Privacy</h4>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-normal mt-0.5">
+                    Your learning data stays on this device. Explore anonymously or attach Google later anytime.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="pt-2 space-y-2">
+              <button
+                id="onboarding-setup-path-btn"
+                type="button"
+                onClick={handleProceedToPathSetup}
+                className="w-full py-3.5 px-6 rounded-2xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-mono text-xs font-bold tracking-wider uppercase hover:opacity-90 transition-all flex items-center justify-center gap-2 shadow-sm cursor-pointer"
+              >
+                <span>Set up your path</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+
+              <button
+                type="button"
+                id="onboarding-dismiss-btn"
+                onClick={handleDismiss}
+                className="w-full py-2.5 px-4 text-xs font-mono font-semibold text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 transition-colors"
+              >
+                Explore on my own (Dismiss)
+              </button>
             </div>
           </div>
-          <button
-            onClick={handleSkip}
-            className="text-gray-400 hover:text-gray-600 ml-4"
-            title={hasImportedRoadmap ? "Skip tutorial" : "Import roadmap to skip"}
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-        
-        <p className="text-gray-600 text-sm mb-6">{tooltip.text}</p>
-        
-        <div className="flex justify-between items-center">
-          <div className="flex space-x-1">
-            {[1, 2, 3].map((step) => (
-              <div
-                key={step}
-                className={`w-2 h-2 rounded-full ${
-                  step <= tutorialStep ? 'bg-blue-500' : 'bg-gray-300'
-                }`}
-              />
-            ))}
-          </div>
-          
-          <div className="flex gap-2">
-            {hasImportedRoadmap && tutorialStep < 3 && (
+        )}
+
+        {/* ── STEP 2: ONBOARDING_PATH_SETUP ── */}
+        {onboardingState === ONBOARDING_STATES.PATH_SETUP && (
+          <div className="space-y-6" id="onboarding-step-path-setup">
+            <div className="space-y-2 pt-2">
               <button
-                onClick={() => completeTutorial()}
-                className="px-3 py-1 text-sm text-gray-600 hover:text-gray-800"
+                type="button"
+                onClick={handleBackToWelcome}
+                className="inline-flex items-center gap-1.5 text-xs font-mono font-bold text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 transition-colors mb-1 cursor-pointer"
               >
-                Skip
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>Back</span>
               </button>
-            )}
-            
-            <button
-              onClick={handleNext}
-              className="px-4 py-2 bg-blue-500 text-white rounded text-sm font-medium transition-colors flex items-center hover:bg-blue-600"
-            >
-              {tutorialStep === 3 ? 'Get Started' : 'Next'}
-              <ArrowRight className="w-3 h-3 ml-1" />
-            </button>
+
+              <h2
+                id="onboarding-modal-title"
+                className="font-display font-black text-2xl text-slate-900 dark:text-white tracking-tight"
+              >
+                Choose your starting path
+              </h2>
+              <p className="text-xs text-slate-600 dark:text-slate-300 font-sans leading-relaxed">
+                Mount one of our curated STEM tracks below to start immediately, or explore the open Knowledge World.
+              </p>
+            </div>
+
+            {/* Curated Track Choices */}
+            <div className="space-y-3 pt-1">
+              {CURATED_ROADMAPS && CURATED_ROADMAPS.slice(0, 2).map((track) => (
+                <div
+                  key={track.id}
+                  className="p-4 rounded-2xl border-2 border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/50 hover:border-slate-400 dark:hover:border-slate-500 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                >
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      {track.id === 'electronics-embedded' ? (
+                        <Cpu className="w-4 h-4 text-amber-500" />
+                      ) : (
+                        <Layers className="w-4 h-4 text-electric-500" />
+                      )}
+                      <h3 className="font-bold text-sm text-slate-900 dark:text-white">
+                        {track.name}
+                      </h3>
+                    </div>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 leading-normal">
+                      {track.description || 'First-principles progressive technical trajectory.'}
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handleSelectCuratedTrack(track)}
+                    className="px-4 py-2 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-xs font-mono font-bold tracking-wider uppercase hover:opacity-90 transition-all shrink-0 cursor-pointer text-center"
+                  >
+                    Start Track
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            {/* Alternate Options */}
+            <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-2">
+              <button
+                type="button"
+                id="onboarding-build-with-ai-btn"
+                onClick={() => {
+                  setOnboardingState(ONBOARDING_STATES.COMPLETE);
+                  if (completeTutorial) completeTutorial();
+                  else if (onComplete) onComplete();
+                  navigate('/roadmap');
+                }}
+                className="w-full py-2.5 px-4 rounded-xl border border-electric-300 dark:border-electric-800 bg-electric-50/50 dark:bg-electric-950/30 text-electric-700 dark:text-electric-300 font-mono text-xs font-bold transition-colors flex items-center justify-center gap-2 hover:bg-electric-100"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                <span>Build with Any AI (Universal Roadmap Bridge)</span>
+              </button>
+
+              <button
+                type="button"
+                id="onboarding-explore-world-btn"
+                onClick={handleExploreKnowledgeWorld}
+                className="w-full py-3 px-4 rounded-xl border-2 border-slate-300 dark:border-slate-700 hover:border-slate-900 dark:hover:border-slate-400 font-mono text-xs font-bold text-slate-800 dark:text-slate-200 transition-colors flex items-center justify-center gap-2"
+              >
+                <span>Explore Knowledge World</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+
+              <button
+                type="button"
+                onClick={handleDismiss}
+                className="w-full py-2 text-xs font-mono font-semibold text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 transition-colors text-center"
+              >
+                I'll set this up later
+              </button>
+            </div>
           </div>
-        </div>
+        )}
+
       </div>
     </div>
   );
+
+  return createPortal(modalContent, document.body);
 };
 
 export default Onboarding;
