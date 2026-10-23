@@ -178,6 +178,7 @@ export function normalizeFocusTelemetry(raw) {
     source: raw.source || 'android',
     provenance: raw.provenance || (process.env.NODE_ENV === 'test' ? TELEMETRY_PROVENANCE.TEST_FIXTURE : TELEMETRY_PROVENANCE.REAL_EXTERNAL_SOURCE),
     observedAt: raw.observedAt || raw.timestamp || Date.now(),
+    collectionStatus: raw.collectionStatus || null,
     appBreakdown
   };
 }

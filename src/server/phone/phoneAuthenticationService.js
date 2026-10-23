@@ -18,6 +18,11 @@ import {
   getFirebaseAdminStatus
 } from './firebaseAdminApp.js';
 
+import {
+  isDeviceInactivityExpired,
+  DEVICE_INACTIVITY_EXPIRY_MS
+} from '../../shared/phonePolicy.js';
+
 let _testTokenVerifier = null;
 
 /**
@@ -198,6 +203,23 @@ export async function authenticateDeviceRequest(authHeader, repository) {
       authenticated: false,
       error: 'Device registration is revoked or does not exist.',
       code: 'REVOKED_DEVICE',
+      statusCode: 401
+    };
+  }
+
+  // Enforce 30-day inactivity pairing expiration
+  if (device.status === 'expired' || isDeviceInactivityExpired(device)) {
+    if (device.status !== 'expired') {
+      await repository.updateDevice(device.deviceId, {
+        status: 'expired',
+        expiredAt: Date.now()
+      }).catch(() => {});
+    }
+    await repository.revokeDeviceCredentials(device.deviceId).catch(() => {});
+    return {
+      authenticated: false,
+      error: 'Device pairing has expired due to 30 days of inactivity. Re-pairing required.',
+      code: 'DEVICE_INACTIVITY_EXPIRED',
       statusCode: 401
     };
   }

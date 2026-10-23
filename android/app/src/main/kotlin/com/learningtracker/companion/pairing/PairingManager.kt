@@ -34,7 +34,17 @@ class PairingManager(
         }
     }
 
-    fun isPaired(): Boolean = secureStore.isPaired()
+    companion object {
+        const val DEVICE_INACTIVITY_EXPIRY_MS = 30L * 24 * 60 * 60 * 1000L // 30 days
+    }
+
+    fun isExpired(): Boolean {
+        val pairedAt = secureStore.getPairedAt()
+        if (pairedAt <= 0L) return false
+        return (System.currentTimeMillis() - pairedAt) > DEVICE_INACTIVITY_EXPIRY_MS
+    }
+
+    fun isPaired(): Boolean = secureStore.isPaired() && !isExpired()
 
     fun isRevoked(): Boolean = secureStore.isRevoked()
 

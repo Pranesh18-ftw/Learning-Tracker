@@ -127,7 +127,7 @@ const FocusSpace = ({
     setTelemetrySyncState('pending');
     setTelemetrySyncDiagnostic(null);
 
-    const retryDelays = [0, 2500, 5000, 8000, 12000];
+    const retryDelays = [0, 2000, 4500, 7500, 11000, 15000, 20000, 26000, 33000, 42000, 55000];
 
     const attemptSync = async (attemptIndex) => {
       if (isCancelled) return;
@@ -147,15 +147,17 @@ const FocusSpace = ({
 
         if (result?.success && !result.reconciled) {
           setTelemetrySyncState('pending');
-          setTelemetrySyncDiagnostic(null);
           setIsSyncing(false);
 
           if (attemptIndex + 1 < retryDelays.length) {
+            setTelemetrySyncDiagnostic('No telemetry observations recorded yet. Waiting for companion phone upload...');
             const nextDelay = retryDelays[attemptIndex + 1] - retryDelays[attemptIndex];
             const timeoutId = setTimeout(() => {
               attemptSync(attemptIndex + 1);
             }, nextDelay);
             syncTimeoutsRef.current.push(timeoutId);
+          } else {
+            setTelemetrySyncDiagnostic('No telemetry observations recorded for this session');
           }
           return;
         }
@@ -567,7 +569,12 @@ const FocusSpace = ({
                 </span>
               </div>
 
-              {companionTelemetry.observedSeconds === 0 || companionTelemetry.observedSeconds === null ? (
+              {companionTelemetry.collectionStatus === 'PERMISSION_REQUIRED' ? (
+                <div className="p-2.5 rounded-xl bg-slate-900/80 border border-amber-500/30 text-xs font-mono text-amber-300 flex items-center justify-between">
+                  <span>Telemetry unavailable because Usage Access permission is missing on phone</span>
+                  <span className="text-slate-400 text-[11px]">Permission required</span>
+                </div>
+              ) : companionTelemetry.observedSeconds === 0 || companionTelemetry.observedSeconds === null ? (
                 /* Honest display when 0s or missing observation window */
                 <div className="p-2.5 rounded-xl bg-slate-900/80 border border-amber-500/30 text-xs font-mono text-amber-300 flex items-center justify-between">
                   <span>No phone usage observations recorded during session window</span>
@@ -714,7 +721,7 @@ const FocusSpace = ({
                   ) : (
                     <>
                       <span className="text-[10px] text-slate-500 font-mono">
-                        {telemetrySyncDiagnostic || 'No telemetry observations recorded for this session'}
+                        {telemetrySyncDiagnostic || 'No telemetry observations recorded yet. Waiting for companion phone upload...'}
                       </span>
                       <button
                         type="button"

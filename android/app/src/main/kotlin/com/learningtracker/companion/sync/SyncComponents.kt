@@ -189,7 +189,7 @@ class FocusIntegritySyncManager(
         }
     }
 
-    fun getActiveSession(): FocusSessionContract? = activeSession
+    fun getActiveSession(): FocusSessionContract? = activeSession ?: loadPersistedActiveSession()
 
     fun getLastSuccessfulUploadTime(): Long = lastSuccessfulUploadTime
 

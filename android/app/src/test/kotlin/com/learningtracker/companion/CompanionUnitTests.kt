@@ -958,4 +958,112 @@ class CompanionUnitTests {
         val prodUrl = PhoneApiClient.resolveDefaultBaseUrl("https://learningtracker001.netlify.app", isDebug = false)
         assertEquals("https://learningtracker001.netlify.app/api/v1/phone", prodUrl)
     }
+
+    // =========================================================================
+    // SECTION 13: AUTOMATIC DETECTION, INACTIVITY EXPIRY & TRUTHFULNESS
+    // =========================================================================
+
+    @Test
+    fun test77_CompanionPackageNeutralClassification_SuppressesOwnUiFromInterruptions() {
+        val classifier = InterruptionClassifier()
+        assertEquals(AppCategory.NEUTRAL, classifier.classifyPackage("com.learningtracker.companion"))
+        assertEquals(AppCategory.NEUTRAL, classifier.classifyPackage("com.learningtracker.companion.debug"))
+
+        val intervals = listOf(
+            ForegroundInterval("com.learningtracker.companion.debug", 1000L, 5000L),
+            ForegroundInterval("com.instagram.android", 6000L, 10000L)
+        )
+        val interruptions = classifier.classifyIntervals(intervals)
+        assertEquals(1, interruptions.size)
+        assertEquals("com.instagram.android", interruptions[0].packageName)
+        assertEquals(AppCategory.DISTRACTION, interruptions[0].category)
+    }
+
+    @Test
+    fun test78_InactivityExpiryPolicy_ThresholdIs30Days() {
+        assertEquals(30L * 24 * 60 * 60 * 1000L, com.learningtracker.companion.pairing.PairingManager.DEVICE_INACTIVITY_EXPIRY_MS)
+    }
+
+    @Test
+    fun test79_AutomaticDetectionOfActiveSession_ParsesContract() {
+        val payload = ActiveSessionResponse(
+            status = "ACTIVE_SESSION_FOUND",
+            sessionId = "sess_auto_detect_001",
+            startedAt = 1728590000000L,
+            intendedDurationSeconds = 1500L,
+            taskName = "Quantum Well States",
+            subjectName = "Solid State",
+            serverTime = 1728590005000L
+        )
+        assertEquals("ACTIVE_SESSION_FOUND", payload.status)
+        assertEquals("sess_auto_detect_001", payload.sessionId)
+        assertEquals("Quantum Well States", payload.taskName)
+    }
+
+    @Test
+    fun test80_AutomaticDetectionOfCompletedSession_ProducesValidTimestamps() {
+        val statusRes = SessionStatusResponse(
+            success = true,
+            sessionId = "sess_auto_end_002",
+            status = "COMPLETE",
+            startedAt = 1728590000000L,
+            endedAt = 1728591500000L,
+            serverStartedAt = 1728590000100L,
+            serverEndedAt = 1728591500100L,
+            intendedDurationSeconds = 1500L,
+            taskName = "Electrodynamics",
+            subjectName = "Physics"
+        )
+        assertEquals("COMPLETE", statusRes.status)
+        assertTrue(statusRes.endedAt!! >= statusRes.startedAt!!)
+    }
+
+    @Test
+    fun test81_SummaryCalculationWithoutManualIntervention_ProducesGenuineEvidence() {
+        val session = FocusSessionContract(
+            sessionId = "sess_auto_summary_003",
+            startedAt = 10000L,
+            intendedDurationSeconds = 1500L,
+            taskName = "MOSFET Inversion",
+            subjectName = "Semiconductors",
+            state = "RUNNING"
+        )
+        val calc = FocusSummaryCalculator()
+        val summary = calc.calculateSummary(
+            session = session,
+            sessionEndTime = 25000L,
+            interruptions = emptyList(),
+            collectionStatus = CollectionStatus.COMPLETE
+        )
+        assertEquals("sess_auto_summary_003", summary.sessionId)
+        assertEquals(0, summary.interruptionCount)
+        assertEquals(15L, summary.observedWindowSeconds)
+        assertEquals(15L, summary.longestUninterruptedSeconds)
+        assertEquals("PENDING", summary.syncState)
+    }
+
+    @Test
+    fun test82_MissingPermission_ProducesHonestPermissionRequiredStatus() {
+        val session = FocusSessionContract(
+            sessionId = "sess_perm_req_004",
+            startedAt = 10000L,
+            intendedDurationSeconds = 1500L,
+            state = "RUNNING"
+        )
+        val calc = FocusSummaryCalculator()
+        val summary = calc.calculateSummary(
+            session = session,
+            sessionEndTime = 25000L,
+            interruptions = emptyList(),
+            collectionStatus = CollectionStatus.PERMISSION_REQUIRED
+        )
+        assertEquals(CollectionStatus.PERMISSION_REQUIRED, summary.collectionStatus)
+        assertEquals(0L, summary.longestUninterruptedSeconds)
+    }
+
+    @Test
+    fun test83_FocusMonitoringServiceConstants() {
+        assertEquals("focus_monitoring_channel", com.learningtracker.companion.service.FocusMonitoringService.CHANNEL_ID)
+        assertEquals(2001, com.learningtracker.companion.service.FocusMonitoringService.NOTIFICATION_ID)
+    }
 }

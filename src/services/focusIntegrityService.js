@@ -27,6 +27,12 @@ import {
   fetchAndReconcileSessionTelemetry,
   getServerSessionTelemetry
 } from './phoneConnectionClient';
+import {
+  COMPANION_REACHABILITY_THRESHOLD_MS,
+  DEVICE_INACTIVITY_EXPIRY_MS,
+  isDeviceInactivityExpired,
+  isDeviceReachable
+} from '../shared/phonePolicy';
 
 const STORAGE_KEY_PAIRED_DEVICE = 'learningTracker_companionDevice';
 const STORAGE_KEY_TELEMETRY = 'learningTracker_focusTelemetry';
@@ -129,7 +135,16 @@ export function setPairedDeviceRecord(device, accountId = null) {
  */
 export function isCompanionPaired() {
   const device = getPairedDevice();
-  return Boolean(device && (device.deviceAssociationId || device.deviceId) && device.status !== 'revoked');
+  if (!device || !(device.deviceAssociationId || device.deviceId)) {
+    return false;
+  }
+  if (device.status === 'revoked' || device.status === 'expired') {
+    return false;
+  }
+  if (isDeviceInactivityExpired(device)) {
+    return false;
+  }
+  return true;
 }
 
 /**
@@ -140,7 +155,7 @@ export function isCompanionConnected() {
   return isCompanionPaired();
 }
 
-export const COMPANION_REACHABILITY_THRESHOLD_MS = 2 * 60 * 1000; // 2 minutes
+export { COMPANION_REACHABILITY_THRESHOLD_MS, DEVICE_INACTIVITY_EXPIRY_MS, isDeviceInactivityExpired, isDeviceReachable };
 
 /**
  * Checks if the companion device has reported a genuine, recent communication signal.
@@ -148,7 +163,10 @@ export const COMPANION_REACHABILITY_THRESHOLD_MS = 2 * 60 * 1000; // 2 minutes
  */
 export function isCompanionReachable(maxAgeMs = COMPANION_REACHABILITY_THRESHOLD_MS) {
   const device = getPairedDevice();
-  if (!device || device.status === 'revoked') {
+  if (!device || device.status === 'revoked' || device.status === 'expired') {
+    return false;
+  }
+  if (isDeviceInactivityExpired(device)) {
     return false;
   }
   if (!device.lastSeenAt) {

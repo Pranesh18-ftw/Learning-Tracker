@@ -22,6 +22,7 @@ import java.net.URL
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import com.learningtracker.companion.service.FocusMonitoringService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -36,6 +37,9 @@ class FocusIntegrityApplication : Application() {
             context = this,
             pairingManager = pairingManager
         )
+        if (pairingManager.isPaired() && !pairingManager.isRevoked()) {
+            FocusMonitoringService.start(this)
+        }
     }
 }
 
@@ -158,6 +162,7 @@ class MainActivity : ComponentActivity() {
                                         isPaired = true
                                         isRevoked = false
                                         lastError = null
+                                        FocusMonitoringService.start(this@MainActivity)
                                     }
                                     is PairingResult.Error -> {
                                         lastError = "${res.code}: ${res.message}"
@@ -189,6 +194,7 @@ class MainActivity : ComponentActivity() {
                                         isPaired = true
                                         isRevoked = false
                                         lastError = null
+                                        FocusMonitoringService.start(this@MainActivity)
                                     } else if (res is PairingResult.Error) {
                                         lastError = "${res.code}: ${res.message}"
                                     }
@@ -250,6 +256,7 @@ class MainActivity : ComponentActivity() {
                             }
                         },
                         onUnpair = {
+                            FocusMonitoringService.stop(this@MainActivity)
                             app.pairingManager.unpair()
                             isPaired = false
                             activeSession = null
@@ -281,6 +288,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        // Re-check access when user returns from system Settings
+        if (app.pairingManager.isPaired() && !app.pairingManager.isRevoked()) {
+            FocusMonitoringService.start(this)
+        }
     }
 }

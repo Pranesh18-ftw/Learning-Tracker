@@ -17,3 +17,14 @@ export const PATH_TO_TAB = {
   '/trajectory': 'trajectory',
   '/settings': 'settings',
 };
+
+export const TAB_TITLES = {
+  dashboard: 'Now | Learning Tracker',
+  roadmap: 'World Roadmap | Learning Tracker',
+  'learning-plan': 'Learning Path | Learning Tracker',
+  stats: 'Growth & Analytics | Learning Tracker',
+  achievements: 'Learning Archive | Learning Tracker',
+  trajectory: 'Trajectory & Capabilities | Learning Tracker',
+  settings: 'Identity & Settings | Learning Tracker',
+  'not-found': 'Page Not Found (404) | Learning Tracker',
+};

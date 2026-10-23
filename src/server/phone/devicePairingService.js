@@ -21,6 +21,10 @@ import {
 import {
   validatePairingCompleteRequest
 } from './phoneValidation.js';
+import {
+  isDeviceInactivityExpired,
+  DEVICE_INACTIVITY_EXPIRY_MS
+} from '../../shared/phonePolicy.js';
 
 const PAIRING_EXPIRY_MS = 5 * 60 * 1000; // 5 minutes
 
@@ -162,16 +166,31 @@ export async function listOwnerDevices(ownerUid, repository) {
 
   const rawDevices = await repository.listDevicesByOwner(ownerUid);
 
-  // Return clean DTOs without credential hashes
-  const devices = rawDevices.map(d => ({
-    deviceId: d.deviceId,
-    deviceName: d.deviceName,
-    status: d.status,
-    protocolVersion: d.protocolVersion,
-    pairedAt: d.pairedAt,
-    lastSeenAt: d.lastSeenAt,
-    revokedAt: d.revokedAt || null
-  }));
+  // Return clean DTOs without credential hashes, marking expired devices
+  const devices = [];
+  for (const d of rawDevices) {
+    let status = d.status;
+    let expiredAt = d.expiredAt || null;
+
+    if (status === 'active' && isDeviceInactivityExpired(d)) {
+      status = 'expired';
+      expiredAt = Date.now();
+      // Mark expired in repository and revoke credentials without refreshing lastSeenAt
+      repository.updateDevice(d.deviceId, { status: 'expired', expiredAt }).catch(() => {});
+      repository.revokeDeviceCredentials(d.deviceId).catch(() => {});
+    }
+
+    devices.push({
+      deviceId: d.deviceId,
+      deviceName: d.deviceName,
+      status,
+      protocolVersion: d.protocolVersion,
+      pairedAt: d.pairedAt,
+      lastSeenAt: d.lastSeenAt,
+      revokedAt: d.revokedAt || null,
+      expiredAt
+    });
+  }
 
   return {
     success: true,

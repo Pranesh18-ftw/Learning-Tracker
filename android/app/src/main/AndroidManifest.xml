@@ -14,6 +14,11 @@
     <!-- Safe termination/recovery if device is rebooted during an active focus session -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
+    <!-- Foreground monitoring service for automatic focus session detection and upload -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <application
         android:name=".FocusIntegrityApplication"
         android:allowBackup="false"
@@ -51,6 +56,19 @@
                     android:pathPrefix="/pair" />
             </intent-filter>
         </activity>
+
+        <service
+            android:name=".service.FocusMonitoringService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+        <receiver
+            android:name=".service.BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
 
     </application>
 

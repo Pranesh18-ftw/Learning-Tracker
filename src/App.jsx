@@ -10,13 +10,14 @@ import StatisticsPage from './pages/StatisticsPage';
 import SettingsPage from './pages/SettingsPage';
 import AchievementsPage from './pages/AchievementsPage';
 import TrajectoryPage from './pages/TrajectoryPage';
+import NotFoundPage from './pages/NotFoundPage';
 import Onboarding from './onboarding/Onboarding';
 import CustomCursor from './components/CustomCursor';
 import { RoadmapProvider, useRoadmap } from './context/RoadmapContext';
 
 import ErrorBoundary from './components/ErrorBoundary';
-import { TAB_TO_PATH, PATH_TO_TAB } from './utils/navigation';
-export { TAB_TO_PATH, PATH_TO_TAB };
+import { TAB_TO_PATH, PATH_TO_TAB, TAB_TITLES } from './utils/navigation';
+export { TAB_TO_PATH, PATH_TO_TAB, TAB_TITLES };
 
 function AppContent() {
   const {
@@ -39,6 +40,22 @@ function AppContent() {
   const location = useLocation();
   const navigate = useNavigate();
 
+  // URL is authoritative; recognize valid paths or route to 404
+  const normalizedPath = location.pathname.endsWith('/') && location.pathname.length > 1
+    ? location.pathname.slice(0, -1)
+    : location.pathname;
+  const isKnownRoute = Object.prototype.hasOwnProperty.call(PATH_TO_TAB, normalizedPath);
+  const activeTab = isKnownRoute ? PATH_TO_TAB[normalizedPath] : 'not-found';
+
+  // Dynamic document title per route and focus mode (unconditional hook)
+  React.useEffect(() => {
+    if (focusSession) {
+      document.title = 'Focus Space | Learning Tracker';
+    } else {
+      document.title = TAB_TITLES[activeTab] || 'Learning Tracker';
+    }
+  }, [activeTab, focusSession]);
+
   // If currently in Focus Mode, application enters the quiet focus space
   if (focusSession) {
     return (
@@ -58,9 +75,6 @@ function AppContent() {
       </div>
     );
   }
-
-  // URL is authoritative
-  const activeTab = PATH_TO_TAB[location.pathname] || 'dashboard';
 
   const setActiveTab = (tab) => {
     navigate(TAB_TO_PATH[tab] || '/');
@@ -82,13 +96,15 @@ function AppContent() {
         return <TrajectoryPage />;
       case 'settings':
         return <SettingsPage />;
+      case 'not-found':
+        return <NotFoundPage requestedPath={location.pathname} />;
       default:
         return <DashboardPage />;
     }
   };
 
   return (
-    <div className={`min-h-screen transition-colors duration-200 ${isDarkMode ? 'bg-[#0B0F19] text-slate-100' : 'bg-[#F8FAFC] text-slate-900'}`}>
+    <div className={`min-h-screen flex flex-col transition-colors duration-200 ${isDarkMode ? 'bg-[#0B0F19] text-slate-100' : 'bg-[#F8FAFC] text-slate-900'}`}>
       <CustomCursor />
       <Topbar activeTab={activeTab} setActiveTab={setActiveTab} />
 
@@ -124,13 +140,20 @@ function AppContent() {
         </div>
       )}
 
-      <main className="py-6 sm:py-8 px-4 sm:px-8 relative w-full min-w-0">
+      <main className="py-6 sm:py-8 px-4 sm:px-8 relative w-full min-w-0 flex-1">
         <div className="max-w-6xl mx-auto min-w-0">
           <ErrorBoundary key={activeTab} fallbackTitle={`Unable to display ${activeTab} view`}>
             {renderContent()}
           </ErrorBoundary>
         </div>
       </main>
+
+      <footer className="py-5 border-t border-slate-200 dark:border-slate-800 text-center text-xs font-mono text-slate-500 dark:text-slate-400">
+        <div className="max-w-6xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
+          <span>Learning Tracker · Serious STEM with Tactile Clarity</span>
+          <span>© {new Date().getFullYear()} · Truthful Evidence Engine</span>
+        </div>
+      </footer>
 
       <AchievementNotification />
 

@@ -52,6 +52,7 @@ class InterruptionClassifier(
             "com.google.android.dialer",
             "com.samsung.android.dialer",
             "com.learningtracker.companion",
+            "com.learningtracker.companion.debug",
             "com.sec.android.app.launcher",
             "com.google.android.apps.nexuslauncher"
         )
@@ -64,8 +65,10 @@ class InterruptionClassifier(
         // 1. User explicit override takes priority (Prompt #15)
         userOverrides[packageName]?.let { return it }
 
-        // 2. Default package sets
-        if (DEFAULT_NEUTRAL_PACKAGES.contains(packageName)) return AppCategory.NEUTRAL
+        // 2. Default package sets - companion itself is always neutral
+        if (packageName.startsWith("com.learningtracker.companion") || DEFAULT_NEUTRAL_PACKAGES.contains(packageName)) {
+            return AppCategory.NEUTRAL
+        }
         if (DEFAULT_REFERENCE_PACKAGES.contains(packageName)) return AppCategory.REFERENCE
         if (DEFAULT_DISTRACTION_PACKAGES.contains(packageName)) return AppCategory.DISTRACTION
 
