@@ -131,14 +131,31 @@ export const resolveConceptCapabilities = (conceptName = '', taskName = '') => {
 export const buildSubjectTopology = (subject, nextTask = null, isTaskCompleted = null) => {
   if (!subject || !Array.isArray(subject.phases)) {
     return {
-      domainName: 'No Domain Loaded',
+      subject: subject || null,
+      domainName: subject?.name || 'No Domain Loaded',
       orientationLine: 'No concepts available',
       regions: [],
       allConcepts: [],
       currentConcept: null,
+      fieldIntelligence: subject?.fieldIntelligence || null,
+      projects: Array.isArray(subject?.projects) ? subject.projects : [],
+      competencies: Array.isArray(subject?.competencies) ? subject.competencies : [],
+      specializations: Array.isArray(subject?.specializations) ? subject.specializations : [],
+      learnerContext: subject?.learnerContext || null,
+      adaptationRules: subject?.adaptationRules || null,
+      dependencyGraph: subject?.dependencyGraph || null,
       stats: { total: 0, established: 0, activeName: '' }
     };
   }
+
+  const sanitizeItem = (item) => {
+    if (typeof item === 'string') return item;
+    if (item && typeof item.name === 'string') return item.name;
+    if (item && typeof item.title === 'string') return item.title;
+    if (item && typeof item.id === 'string') return item.id;
+    if (item && typeof item.capability === 'string') return item.capability;
+    return '';
+  };
 
   const allConcepts = [];
   const regions = [];
@@ -167,19 +184,23 @@ export const buildSubjectTopology = (subject, nextTask = null, isTaskCompleted =
         )
       );
 
-      const glyph = resolveConceptGlyph(task.name, '', subject.name);
-      const whyItMatters = task.whyItMatters || resolveWhyItMatters(task.name, '', phase.name);
-      const capabilities = (Array.isArray(task.capabilities) && task.capabilities.length > 0)
-        ? task.capabilities
-        : resolveConceptCapabilities(task.name, '');
+      const taskName = typeof task.name === 'string' ? task.name : (task.title || `Concept ${taskIdx + 1}`);
+      const glyph = resolveConceptGlyph(taskName, '', subject.name);
+      const whyItMatters = typeof task.whyItMatters === 'string'
+        ? task.whyItMatters
+        : (task.whyItMatters?.reason || task.whyItMatters?.text || resolveWhyItMatters(taskName, '', phase.name));
 
-      const explicitPrereqs = Array.isArray(task.prerequisites) ? [...task.prerequisites] : [];
-      const explicitConsequences = Array.isArray(task.consequences) ? [...task.consequences] : [];
+      const capabilities = (Array.isArray(task.capabilities) && task.capabilities.length > 0)
+        ? task.capabilities.map(sanitizeItem).filter(Boolean)
+        : resolveConceptCapabilities(taskName, '');
+
+      const explicitPrereqs = Array.isArray(task.prerequisites) ? task.prerequisites.map(sanitizeItem).filter(Boolean) : [];
+      const explicitConsequences = Array.isArray(task.consequences) ? task.consequences.map(sanitizeItem).filter(Boolean) : [];
 
       const conceptNode = {
         id: task.id || `concept-${phaseIdx}-${taskIdx}`,
         taskId: task.id,
-        name: task.name,
+        name: taskName,
         phaseId: phase.id,
         phaseName: phase.name,
         subjectId: subject.id,
@@ -217,13 +238,13 @@ export const buildSubjectTopology = (subject, nextTask = null, isTaskCompleted =
       id: phase.id || `region-${phaseIdx}`,
       index: phaseIdx + 1,
       name: phase.name,
-      purpose: phase.purpose || phase.description || null,
-      capabilitiesDeveloped: Array.isArray(phase.capabilitiesDeveloped) ? phase.capabilitiesDeveloped : [],
-      whyThisAreaMatters: phase.whyThisAreaMatters || null,
-      importantConcepts: Array.isArray(phase.importantConcepts) ? phase.importantConcepts : [],
+      purpose: typeof phase.purpose === 'string' ? phase.purpose : (typeof phase.description === 'string' ? phase.description : null),
+      capabilitiesDeveloped: (Array.isArray(phase.capabilitiesDeveloped) ? phase.capabilitiesDeveloped : []).map(sanitizeItem).filter(Boolean),
+      whyThisAreaMatters: typeof phase.whyThisAreaMatters === 'string' ? phase.whyThisAreaMatters : null,
+      importantConcepts: (Array.isArray(phase.importantConcepts) ? phase.importantConcepts : []).map(sanitizeItem).filter(Boolean),
       associatedProjects: Array.isArray(phase.associatedProjects) ? phase.associatedProjects : [],
-      relevantResearchFindings: Array.isArray(phase.relevantResearchFindings) ? phase.relevantResearchFindings : [],
-      prerequisites: Array.isArray(phase.prerequisites) ? phase.prerequisites : [],
+      relevantResearchFindings: (Array.isArray(phase.relevantResearchFindings) ? phase.relevantResearchFindings : []).map(sanitizeItem).filter(Boolean),
+      prerequisites: (Array.isArray(phase.prerequisites) ? phase.prerequisites : []).map(sanitizeItem).filter(Boolean),
       concepts: regionConcepts,
       totalConcepts: regionConcepts.length,
       establishedCount: regionEstablished,

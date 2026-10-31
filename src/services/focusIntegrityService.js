@@ -231,7 +231,7 @@ export function resetSessionRelayStatusForTest() {
  * Generates a short-lived single-use pairing token (Prompt #8)
  */
 export function generatePairingToken() {
-  const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+  const code = String(Math.floor(100000 + Math.random() * 900000));
   const tokenRecord = {
     token: code,
     createdAt: Date.now(),

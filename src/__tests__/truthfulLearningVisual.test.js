@@ -1,74 +1,42 @@
 import { resolveLearningVisual, resolveProofCriteria, resolveChallengePrompt } from '../utils/visualResolver';
 
 describe('Truthful Learning Visual & Explicit Mapping Invariants', () => {
-  test('task with explicit visualId "rc-charging" maps to authentic rc-circuit model', () => {
-    const task = {
-      visualId: 'rc-charging',
-      conceptId: 'capacitors-rc-dynamics',
-      name: 'Capacitors',
-      taskName: 'Electrostatics'
-    };
-    const visual = resolveLearningVisual(task, task, { name: 'Electronics' });
+  test('explicit visualIds correctly map to verified interactive models and technical diagrams', () => {
+    const testCases = [
+      {
+        task: { visualId: 'rc-charging', conceptId: 'capacitors-rc-dynamics', name: 'Capacitors', taskName: 'Electrostatics' },
+        subject: { name: 'Electronics' },
+        expected: { type: 'interactive', model: 'rc-circuit', title: 'Capacitor Charge Dynamics', formula: 'V_C(t) = V_S · (1 - e^(-t / RC))' }
+      },
+      {
+        task: { visualId: 'ohms-law', conceptId: 'resistors-ohms-law', name: "Ohm's Law Verification", taskName: 'Resistor Networks' },
+        subject: { name: 'Electronics' },
+        expected: { type: 'interactive', model: 'ohms-law', formula: 'I = V / R' }
+      },
+      {
+        task: { visualId: 'bjt-switch', conceptId: 'bjt-cutoff-saturation', name: 'Why does Q1 turn on?', taskName: 'BJT Cutoff & Saturation' },
+        subject: { name: 'Electronics' },
+        expected: { type: 'interactive', model: 'bjt-switch', title: 'BJT Saturation Switch' }
+      },
+      {
+        task: { visualId: 'diode-barrier', conceptId: 'diode-mechanics', name: 'P-N junction forward & reverse bias', taskName: 'Diode Mechanics' },
+        subject: { name: 'Electronics' },
+        expected: { type: 'diagram', model: 'diode' }
+      },
+      {
+        task: { visualId: 'memory-model', conceptId: 'memory-layout-lifetime', name: 'Virtual address space layout: stack vs heap', taskName: 'Memory Layout' },
+        subject: { name: 'Systems Architecture' },
+        expected: { type: 'diagram', model: 'memory-model' }
+      }
+    ];
 
-    expect(visual.type).toBe('interactive');
-    expect(visual.model).toBe('rc-circuit');
-    expect(visual.title).toBe('Capacitor Charge Dynamics');
-    expect(visual.formula).toBe('V_C(t) = V_S · (1 - e^(-t / RC))');
-    expect(visual.model).not.toBe('ohms-law');
-  });
-
-  test('task with explicit visualId "ohms-law" maps to ohms-law model', () => {
-    const task = {
-      visualId: 'ohms-law',
-      conceptId: 'resistors-ohms-law',
-      name: "Ohm's Law Verification",
-      taskName: 'Resistor Networks'
-    };
-    const visual = resolveLearningVisual(task, task, { name: 'Electronics' });
-
-    expect(visual.type).toBe('interactive');
-    expect(visual.model).toBe('ohms-law');
-    expect(visual.formula).toBe('I = V / R');
-  });
-
-  test('task with explicit visualId "bjt-switch" maps to bjt-switch model', () => {
-    const task = {
-      visualId: 'bjt-switch',
-      conceptId: 'bjt-cutoff-saturation',
-      name: 'Why does Q1 turn on?',
-      taskName: 'BJT Cutoff & Saturation'
-    };
-    const visual = resolveLearningVisual(task, task, { name: 'Electronics' });
-
-    expect(visual.type).toBe('interactive');
-    expect(visual.model).toBe('bjt-switch');
-    expect(visual.title).toBe('BJT Saturation Switch');
-  });
-
-  test('task with explicit visualId "diode-barrier" maps to diode diagram', () => {
-    const task = {
-      visualId: 'diode-barrier',
-      conceptId: 'diode-mechanics',
-      name: 'P-N junction forward & reverse bias',
-      taskName: 'Diode Mechanics'
-    };
-    const visual = resolveLearningVisual(task, task, { name: 'Electronics' });
-
-    expect(visual.type).toBe('diagram');
-    expect(visual.model).toBe('diode');
-  });
-
-  test('task with explicit visualId "memory-model" maps to memory-model diagram', () => {
-    const task = {
-      visualId: 'memory-model',
-      conceptId: 'memory-layout-lifetime',
-      name: 'Virtual address space layout: stack vs heap',
-      taskName: 'Memory Layout'
-    };
-    const visual = resolveLearningVisual(task, task, { name: 'Systems Architecture' });
-
-    expect(visual.type).toBe('diagram');
-    expect(visual.model).toBe('memory-model');
+    for (const { task, subject, expected } of testCases) {
+      const visual = resolveLearningVisual(task, task, subject);
+      expect(visual.type).toBe(expected.type);
+      expect(visual.model).toBe(expected.model);
+      if (expected.title) expect(visual.title).toBe(expected.title);
+      if (expected.formula) expect(visual.formula).toBe(expected.formula);
+    }
   });
 
   test('unmapped abstract task resolves to type "none" (no fake simulator)', () => {

@@ -9,7 +9,7 @@ import {
   HelpCircle,
   ArrowRight,
   AlertTriangle,
-  Sparkles,
+  Layers,
   ShieldCheck,
   FolderGit2
 } from 'lucide-react';
@@ -319,7 +319,7 @@ const ConceptDeepDiveDrawer = ({
               {highLeverageConcepts.length > 0 && (
                 <div className="p-4 rounded-2xl bg-electric-50/50 dark:bg-electric-950/30 border border-electric-200 dark:border-electric-900 space-y-2">
                   <div className="flex items-center gap-1.5 text-xs font-mono font-bold uppercase tracking-wider text-electric-700 dark:text-electric-300">
-                    <Sparkles className="w-3.5 h-3.5" />
+                    <Layers className="w-3.5 h-3.5" />
                     <span>High-Leverage Concepts (Broad Downstream Utility)</span>
                   </div>
                   <div className="flex flex-wrap gap-1.5">

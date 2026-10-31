@@ -53,13 +53,13 @@ const MAX_PAYLOAD_BYTES = 5 * 1024 * 1024; // 5 MB safety limit
 
 // ── SYNONYM DICTIONARIES (v2.1 / v2.3) ──
 
-const PHASE_SYNONYMS = ['learningArcs', 'phases', 'arcs', 'tracks', 'stages'];
-const MODULE_SYNONYMS = ['modules', 'tasks', 'lessons', 'units', 'topics'];
-const SUBTASK_SYNONYMS = ['subtasks', 'steps', 'items', 'actions', 'procedures'];
-const LEARNING_UNIT_SYNONYMS = ['learningUnits', 'learningObjectives', 'concepts', 'understandings', 'knowledgeUnits', 'foundations', 'coreTheories', 'insights'];
-const DOING_TASK_SYNONYMS = ['doingTasks', 'exercises', 'activities', 'practiceActivities', 'implementations', 'practicums', 'investigations', 'analyses', 'applications', 'derivations', 'sourceCriticisms', 'fieldwork'];
+const PHASE_SYNONYMS = ['learningArcs', 'phases', 'arcs', 'tracks', 'stages', 'milestones', 'levels', 'parts', 'weeks', 'chapters', 'units'];
+const MODULE_SYNONYMS = ['modules', 'tasks', 'lessons', 'units', 'topics', 'sessions', 'drills', 'recipes', 'exercises', 'practices', 'challenges', 'assignments', 'theorems', 'investigations'];
+const SUBTASK_SYNONYMS = ['subtasks', 'steps', 'items', 'actions', 'procedures', 'checklists', 'drills', 'activities', 'takes'];
+const LEARNING_UNIT_SYNONYMS = ['learningUnits', 'learningObjectives', 'concepts', 'understandings', 'knowledgeUnits', 'foundations', 'coreTheories', 'insights', 'principles', 'keyConcepts', 'mentalModels', 'theories'];
+const DOING_TASK_SYNONYMS = ['doingTasks', 'exercises', 'activities', 'practiceActivities', 'implementations', 'practicums', 'investigations', 'analyses', 'applications', 'derivations', 'sourceCriticisms', 'fieldwork', 'drills', 'challenges', 'labs', 'proofs', 'experiments', 'builds'];
 const COMPETENCY_SYNONYMS = ['competencies', 'skills', 'capabilities', 'proficiencies'];
-const PROJECT_SYNONYMS = ['projects', 'builds', 'capstones', 'practicalProjects'];
+const PROJECT_SYNONYMS = ['projects', 'builds', 'capstones', 'practicalProjects', 'creations', 'milestoneProjects'];
 const SPECIALIZATION_SYNONYMS = ['specializationBranches', 'specializations', 'electives', 'branches', 'tracks'];
 
 // Field intelligence synonym mappings for flexible ingestion
@@ -76,7 +76,7 @@ const FIELD_INTEL_SYNONYMS = {
   // v2.3 additions
   claims: ['claims', 'claimLedger', 'researchClaims', 'supportedClaimsList'],
   roadmapInfluences: ['roadmapInfluences', 'influences', 'researchConsequences', 'findingConsequences', 'influenceMap'],
-  whatStandardRoadmapWouldMiss: ['whatStandardRoadmapWouldMiss', 'gapAnalysis', 'researchGapAnalysis', 'standardRoadmapGaps', 'omittedCurriculum'],
+  whatStandardRoadmapWouldMiss: ['whatStandardRoadmapWouldMiss', 'gapAnalysis', 'researchGapAnalysis', 'standardRoadmapGaps', 'omittedCurriculum', 'coverageGaps', 'gaps', 'identifiedGaps', 'curriculumGaps', 'limitations', 'researchLimitations'],
   researchScope: ['researchScope', 'scope', 'investigationScope'],
   researchLimitations: ['researchLimitations', 'limitations', 'coverageLimitations'],
   coverageGaps: ['coverageGaps', 'gaps', 'identifiedGaps'],
@@ -158,6 +158,110 @@ export function attemptJsonRepair(str) {
 }
 
 /**
+ * Omnivorous JSON extractor for modern frontier AI outputs (Gemini Argon, GPT Astra, Claude, DeepSeek):
+ * 1. Iterates over ALL ```(?:json)? ... ``` code blocks in the input text and tests each.
+ * 2. If code blocks fail, scans for embedded un-fenced JSON objects starting with { "schemaVersion" or { "learningArcs" or { "subjects" or { "phases"
+ * 3. Scores candidates by structural richness (arcs, phases, subjects, field intelligence, projects) and returns the best candidate object.
+ *
+ * @param {string} text - Raw input text
+ * @returns {Object|null} Best parsed JSON candidate or null
+ */
+export function extractBestJsonFromText(text) {
+  if (!text || typeof text !== 'string') return null;
+  const candidates = [];
+
+  // Strategy 1: Find all ```(?:json)? ... ``` code blocks across the entire text
+  const codeBlockRegex = /```(?:json)?\s*([\s\S]*?)\s*```/gi;
+  let match;
+  while ((match = codeBlockRegex.exec(text)) !== null) {
+    const rawContent = match[1].trim();
+    if (rawContent.startsWith('{') || rawContent.startsWith('[')) {
+      const parsed = safeJsonParse(rawContent) || attemptJsonRepair(rawContent);
+      if (parsed && typeof parsed === 'object') {
+        candidates.push(parsed);
+      }
+    }
+  }
+
+  // Strategy 2: If code blocks did not yield a rich roadmap, scan for un-fenced balanced JSON
+  if (candidates.length === 0 || !candidates.some(c => c.learningArcs || c.phases || c.subjects)) {
+    const markers = [
+      /"schemaVersion"\s*:/,
+      /"learningArcs"\s*:/,
+      /"subjects"\s*:/,
+      /"phases"\s*:/,
+      /"fieldIntelligence"\s*:/
+    ];
+    let earliestMarkerIdx = -1;
+    for (const marker of markers) {
+      const idx = text.search(marker);
+      if (idx !== -1 && (earliestMarkerIdx === -1 || idx < earliestMarkerIdx)) {
+        earliestMarkerIdx = idx;
+      }
+    }
+    if (earliestMarkerIdx !== -1) {
+      const openBraceIdx = text.lastIndexOf('{', earliestMarkerIdx);
+      if (openBraceIdx !== -1) {
+        let depth = 0;
+        let inStr = false;
+        let esc = false;
+        let closeBraceIdx = -1;
+        for (let i = openBraceIdx; i < text.length; i++) {
+          const ch = text[i];
+          if (esc) {
+            esc = false;
+            continue;
+          }
+          if (ch === '\\') {
+            esc = true;
+            continue;
+          }
+          if (ch === '"') {
+            inStr = !inStr;
+            continue;
+          }
+          if (!inStr) {
+            if (ch === '{') depth++;
+            else if (ch === '}') {
+              depth--;
+              if (depth === 0) {
+                closeBraceIdx = i;
+                break;
+              }
+            }
+          }
+        }
+        if (closeBraceIdx !== -1) {
+          const jsonSub = text.slice(openBraceIdx, closeBraceIdx + 1);
+          const parsed = safeJsonParse(jsonSub) || attemptJsonRepair(jsonSub);
+          if (parsed && typeof parsed === 'object') {
+            candidates.push(parsed);
+          }
+        }
+      }
+    }
+  }
+
+  if (candidates.length === 0) return null;
+
+  const scoreCandidate = (cand) => {
+    if (!cand || typeof cand !== 'object') return 0;
+    let score = 0;
+    if (cand.schemaVersion) score += 20;
+    if (Array.isArray(cand.learningArcs) && cand.learningArcs.length > 0) score += 60;
+    if (Array.isArray(cand.phases) && cand.phases.length > 0) score += 60;
+    if (Array.isArray(cand.subjects) && cand.subjects.length > 0) score += 60;
+    if (cand.fieldIntelligence) score += 30;
+    if (Array.isArray(cand.projects) && cand.projects.length > 0) score += 15;
+    if (cand.adaptationRules) score += 10;
+    return score;
+  };
+
+  candidates.sort((a, b) => scoreCandidate(b) - scoreCandidate(a));
+  return candidates[0];
+}
+
+/**
  * Detects the format of raw external AI input.
  *
  * @param {string} text - Raw input string
@@ -192,14 +296,10 @@ export function detectFormat(text) {
     }
   }
 
-  // Check for mixed markdown enclosing a JSON code block
-  const jsonBlockRegex = /```(?:json)?\s*([\s\S]*?)\s*```/i;
-  const match = jsonBlockRegex.exec(trimmed);
-  if (match && match[1]) {
-    const candidateJson = safeJsonParse(match[1].trim()) || attemptJsonRepair(match[1].trim());
-    if (candidateJson && typeof candidateJson === 'object') {
-      return FORMAT_TYPES.MIXED_AI_RESPONSE;
-    }
+  // Check for mixed markdown enclosing a JSON code block or embedded JSON
+  const candidateJson = extractBestJsonFromText(trimmed);
+  if (candidateJson && typeof candidateJson === 'object') {
+    return FORMAT_TYPES.MIXED_AI_RESPONSE;
   }
 
   // Check for Deep Research Report indicators
@@ -555,6 +655,7 @@ export function assessResearchQuality(fieldIntelligence = {}, canonicalRoadmap =
   // 1. Detect 6 Research Layers
   const layersDetected = {
     FOUNDATIONS: foundationalIdeas.length > 0 ||
+      !!fi.fieldDefinition ||
       !!fi.researchLayers?.FOUNDATIONS ||
       sources.some(s => s.type === SOURCE_TYPES.LANDMARK_WORK || s.type === SOURCE_TYPES.TEXTBOOK_MONOGRAPH || s.recency === RESEARCH_RECENCY.HISTORICAL),
     FIELD_DEVELOPMENT: lineage.length > 0 ||
@@ -565,6 +666,8 @@ export function assessResearchQuality(fieldIntelligence = {}, canonicalRoadmap =
       sources.some(s => s.recency === RESEARCH_RECENCY.CURRENT || s.type === SOURCE_TYPES.OFFICIAL_DOCUMENTATION || s.type === SOURCE_TYPES.PROFESSIONAL_STANDARD || s.type === SOURCE_TYPES.REPUTABLE_INDUSTRY_SOURCE),
     CURRENT_RESEARCH: frontier.length > 0 ||
       !!fi.researchLayers?.CURRENT_RESEARCH ||
+      !!fi.researchScope ||
+      (Array.isArray(fi.uncertainties) && fi.uncertainties.length > 0) ||
       (Array.isArray(fi.openProblems) && fi.openProblems.length > 0) ||
       sources.some(s => s.recency === RESEARCH_RECENCY.RECENT || s.type === SOURCE_TYPES.PRIMARY_RESEARCH || s.type === SOURCE_TYPES.SURVEY_REVIEW || s.type === SOURCE_TYPES.SYSTEMATIC_REVIEW),
     EMERGING_FUTURE: !!fi.researchLayers?.EMERGING_FUTURE ||
@@ -737,7 +840,17 @@ function extractDoingTasks(moduleObj) {
         subtasks: []
       };
     }
-    const name = sanitizeText(task.name || task.title || task.action || `Task ${idx + 1}`);
+    const name = sanitizeText(
+      task.name ||
+      task.title ||
+      task.task ||
+      task.action ||
+      task.activity ||
+      task.description ||
+      task.prompt ||
+      task.do ||
+      `Task ${idx + 1}`
+    );
     const rawSubtasks = Array.isArray(task.subtasks) ? task.subtasks : resolveField(task, SUBTASK_SYNONYMS, []);
     return {
       id: task.id || `dt-${idx + 1}`,
@@ -959,7 +1072,7 @@ function parseMarkdownRoadmap(markdownText) {
     }
 
     // Detect Learning Arc / Phase headings (# Learning Arc N: ..., - Phase N: ...)
-    const arcMatch = /^(?:#{1,3}|[-*•]\s+)\s*(?:Learning\s*Arc|Phase|Track|Stage|Module\s*Cluster)\b\s*(\d+|[A-Z])?\s*[:—-]?\s*(.*)/i.exec(rawLine);
+    const arcMatch = /^(?:#{1,3}|[-*•]\s+)\s*(?:Learning\s*Arc|Phase|Track|Stage|Module\s*Cluster|Milestone|Level|Part|Session\s*Cluster|Week|Chapter)\b\s*(\d+|[A-Z])?\s*[:—-]?\s*(.*)/i.exec(rawLine);
     if (arcMatch && arcMatch[2]) {
       currentSection = 'roadmap';
       const arcName = arcMatch[2].trim() || `Arc ${phases.length + 1}`;
@@ -975,8 +1088,8 @@ function parseMarkdownRoadmap(markdownText) {
 
     // Detect Task / Module headings (### Heading under currentPhase, or explicit Module/Task)
     const taskMatch = currentPhase
-      ? /^(?:#{3,4}\s+(.*)|(?:#{2,4}|[-*•]\s+)\s*(?:Module|Task|Lesson|Unit|Topic)\b\s*[\d.]*\s*[:—-]?\s*(.*))/i.exec(rawLine)
-      : /^(?:#{2,4}|[-*•]\s+)\s*(?:Module|Task|Lesson|Unit|Topic)\b\s*[\d.]*\s*[:—-]?\s*(.*)/i.exec(rawLine);
+      ? /^(?:#{3,4}\s+(.*)|(?:#{2,4}|[-*•]\s+)\s*(?:Module|Task|Lesson|Unit|Topic|Session|Chapter)\b\s*[\d.]*\s*[:—-]?\s*(.*)|#{2,4}\s*(?:Drill|Recipe|Exercise|Practice|Challenge|Assignment|Theorem|Investigation)\b\s*[\d.]*\s*[:—-]?\s*(.*))/i.exec(rawLine)
+      : /^(?:(?:#{2,4}|[-*•]\s+)\s*(?:Module|Task|Lesson|Unit|Topic|Session|Chapter)\b\s*[\d.]*\s*[:—-]?\s*(.*)|#{2,4}\s*(?:Drill|Recipe|Exercise|Practice|Challenge|Assignment|Theorem|Investigation)\b\s*[\d.]*\s*[:—-]?\s*(.*))/i.exec(rawLine);
     if (taskMatch) {
       const matchedName = (taskMatch[1] || taskMatch[2] || '').trim();
       if (matchedName) {
@@ -989,7 +1102,7 @@ function parseMarkdownRoadmap(markdownText) {
           phases.push(currentPhase);
         }
         currentSection = 'roadmap';
-        const taskName = matchedName.replace(/^(?:Module|Task|Lesson|Unit|Topic)\b\s*[\d.]*\s*[:—-]?\s*/i, '').trim() || `Task ${currentPhase.tasks.length + 1}`;
+        const taskName = matchedName.replace(/^(?:Module|Task|Lesson|Unit|Topic|Session|Drill|Recipe|Exercise|Practice|Challenge|Assignment|Theorem|Investigation)\b\s*[\d.]*\s*[:—-]?\s*/i, '').trim() || `Task ${currentPhase.tasks.length + 1}`;
         currentTask = {
           id: `task-${phases.length}-${currentPhase.tasks.length + 1}`,
           name: taskName,
@@ -1212,6 +1325,18 @@ function parseMarkdownRoadmap(markdownText) {
           id: `dt-${currentTask.id}-${currentTask.doingTasks.length + 1}`,
           name: bulletContent.replace(/\(Mode:\s*\w+\)/i, '').trim(),
           mode: modeMatch2 ? modeMatch2[1].toLowerCase() : null,
+          completed: false
+        });
+        continue;
+      }
+
+      // Detect doing tasks (Practice:, Drill:, Exercise:, Recipe:, Challenge:)
+      const doingMatch = /^(?:Practice|Drill|Exercise|Recipe|Challenge|Do|Build|Implement|Measure|Test|Verify)\s*[:—-]\s*(.+)/i.exec(bulletContent);
+      if (doingMatch && currentTask) {
+        currentTask.doingTasks.push({
+          id: `dt-${currentTask.id}-${currentTask.doingTasks.length + 1}`,
+          name: bulletContent,
+          mode: 'practice',
           completed: false
         });
         continue;
@@ -1540,7 +1665,22 @@ function normalizeJsonObject(obj, defaultSubjectName) {
     };
   });
 
-  const subjectName = sanitizeText(obj.name || obj.title || obj.finalDestination || defaultSubjectName);
+  const candidateSubjectName =
+    obj.subjectName ||
+    obj.name ||
+    obj.title ||
+    obj.goal ||
+    obj.destination ||
+    obj.finalDestination ||
+    obj.learnerContext?.primaryLearningGoal ||
+    obj.learnerContext?.targetDestination ||
+    obj.learnerContext?.goal ||
+    obj.primaryLearningGoal ||
+    obj.targetDestination ||
+    (defaultSubjectName && defaultSubjectName !== 'Imported Pathway' && defaultSubjectName !== 'Custom Learning Track' ? defaultSubjectName : null) ||
+    defaultSubjectName;
+
+  const subjectName = sanitizeText(candidateSubjectName);
 
   return {
     isMultiSubject: false,
@@ -1602,19 +1742,32 @@ export function normalizeRoadmapInput(rawInput, learnerContextInput = {}) {
       parsedData = normalizeJsonObject(rawObj, learnerContext.goal || 'Imported Pathway');
     }
   } else if (detectedFormat === FORMAT_TYPES.MIXED_AI_RESPONSE) {
-    const jsonBlockRegex = /```(?:json)?\s*([\s\S]*?)\s*```/i;
-    const match = jsonBlockRegex.exec(text);
-    if (match && match[1]) {
-      let candidateJson = safeJsonParse(match[1].trim());
-      if (!candidateJson) {
-        candidateJson = attemptJsonRepair(match[1].trim());
+    const bestJson = extractBestJsonFromText(text);
+    if (bestJson) {
+      parsedData = normalizeJsonObject(bestJson, learnerContext.goal || 'Imported Pathway');
+    } else {
+      const jsonBlockRegex = /```(?:json)?\s*([\s\S]*?)\s*```/i;
+      const match = jsonBlockRegex.exec(text);
+      if (match && match[1]) {
+        let candidateJson = safeJsonParse(match[1].trim());
+        if (!candidateJson) {
+          candidateJson = attemptJsonRepair(match[1].trim());
+          if (candidateJson) {
+            warnings.push('Malformed JSON inside code block was detected; syntax was automatically repaired.');
+          }
+        }
         if (candidateJson) {
-          warnings.push('Malformed JSON inside code block was detected; syntax was automatically repaired.');
+          parsedData = normalizeJsonObject(candidateJson, learnerContext.goal || 'Imported Pathway');
         }
       }
-      if (candidateJson) {
-        parsedData = normalizeJsonObject(candidateJson, learnerContext.goal || 'Imported Pathway');
-      }
+    }
+  }
+
+  // If still not parsed (e.g. detected as RESEARCH_REPORT, MARKDOWN, or FREEFORM_TEXT, but containing embedded or un-fenced JSON)
+  if (!parsedData) {
+    const fallbackJson = extractBestJsonFromText(text);
+    if (fallbackJson && (fallbackJson.learningArcs || fallbackJson.phases || fallbackJson.subjects)) {
+      parsedData = normalizeJsonObject(fallbackJson, learnerContext.goal || 'Imported Pathway');
     }
   }
 
@@ -1682,13 +1835,25 @@ export function normalizeRoadmapInput(rawInput, learnerContextInput = {}) {
   } else {
     // Single Subject
     const subjectId = `subj-imported-${Date.now().toString(36)}`;
+    const mergedLearnerContext = {
+      ...parsedData.learnerContext,
+      ...learnerContext,
+      primaryLearningGoal: learnerContext.goal || parsedData.learnerContext?.primaryLearningGoal || parsedData.learnerContext?.goal || parsedData.subjectName,
+      targetDestination: learnerContext.destination || parsedData.learnerContext?.targetDestination || parsedData.learnerContext?.destination || parsedData.learnerContext?.targetRole,
+      pedagogicalStyle: parsedData.learnerContext?.pedagogicalStyle || learnerContext.pedagogicalStyle,
+      theoryVsPracticeRatio: parsedData.learnerContext?.theoryVsPracticeRatio || learnerContext.theoryVsPracticeRatio,
+      currentCapabilityLevel: parsedData.learnerContext?.currentCapabilityLevel || learnerContext.currentCapabilityLevel,
+      targetTimeHorizon: parsedData.learnerContext?.targetTimeHorizon || learnerContext.targetTimeHorizon,
+      weeklyStudyRhythmHours: parsedData.learnerContext?.weeklyStudyRhythmHours || learnerContext.weeklyStudyRhythmHours
+    };
+
     canonicalRoadmap = [
       {
         id: subjectId,
-        name: parsedData.subjectName || learnerContext.goal || 'Custom Learning Track',
+        name: parsedData.subjectName || mergedLearnerContext.primaryLearningGoal || learnerContext.goal || 'Custom Learning Track',
         phases: parsedData.phases || [],
         fieldIntelligence: parsedData.fieldIntelligence || createEmptyFieldIntelligence(),
-        learnerContext,
+        learnerContext: mergedLearnerContext,
         dependencyGraph: parsedData.dependencyGraph || { nodes: [], edges: [] },
         projects: parsedData.projects || [],
         competencies: parsedData.competencies || [],

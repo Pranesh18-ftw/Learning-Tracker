@@ -3,7 +3,6 @@ import {
   Zap,
   CheckCircle2,
   Map,
-  Sparkles,
   GitFork,
   Clock
 } from 'lucide-react';
@@ -36,7 +35,7 @@ const PathWeeklyRoute = ({
   if (routeStops.length === 0) {
     return (
       <div className="bg-white dark:bg-[#0F172A] border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-3xl p-12 text-center space-y-3">
-        <Sparkles className="w-8 h-8 text-electric-500 mx-auto" />
+        <Map className="w-8 h-8 text-electric-500 mx-auto" />
         <h3 className="font-display font-black text-lg text-slate-900 dark:text-white">
           Build your first route.
         </h3>

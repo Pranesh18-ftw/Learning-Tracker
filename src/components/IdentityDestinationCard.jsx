@@ -75,8 +75,8 @@ const IdentityDestinationCard = ({
             <Compass className="w-4 h-4" />
           </div>
           <div>
-            <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400 block">
-              Section 01 · Destination
+            <span className="text-xs font-sans font-medium text-slate-500 dark:text-slate-400 block">
+              Destination & Ambition
             </span>
             <h2 className="font-display font-black text-xl text-slate-900 dark:text-white tracking-tight">
               What are you building toward?
@@ -114,7 +114,7 @@ const IdentityDestinationCard = ({
 
         {/* Natural Phrasing: "I am currently working toward..." */}
         <div className="space-y-2">
-          <label className="text-xs font-mono font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
+          <label className="text-xs font-sans font-medium text-slate-600 dark:text-slate-400 block">
             I am currently working toward:
           </label>
           {isEditing ? (
@@ -134,7 +134,7 @@ const IdentityDestinationCard = ({
 
         {/* Natural Phrasing: "because..." */}
         <div className="space-y-2">
-          <label className="text-xs font-mono font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
+          <label className="text-xs font-sans font-medium text-slate-600 dark:text-slate-400 block">
             because:
           </label>
           {isEditing ? (
@@ -155,8 +155,8 @@ const IdentityDestinationCard = ({
         {/* Preset suggestions in edit mode */}
         {isEditing && (
           <div className="pt-2 border-t border-slate-200 dark:border-slate-700 space-y-2">
-            <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400 block">
-              Quick Suggestions:
+            <span className="text-xs font-sans font-medium text-slate-500 dark:text-slate-400 block">
+              Suggested Goals:
             </span>
             <div className="flex flex-wrap gap-1.5">
               {GOAL_PRESETS.map((preset, idx) => (
@@ -243,7 +243,7 @@ const IdentityDestinationCard = ({
         {showCareerDetails && (
           <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3 p-4 rounded-2xl bg-violet-50/40 dark:bg-violet-950/20 border border-violet-200 dark:border-violet-900/40">
             <div>
-              <span className="text-[10px] font-mono font-bold uppercase text-slate-500 dark:text-slate-400 block mb-1">
+              <span className="text-xs font-sans font-medium text-slate-600 dark:text-slate-400 block mb-1">
                 Target Role
               </span>
               {isEditing ? (
@@ -251,15 +251,15 @@ const IdentityDestinationCard = ({
                   type="text"
                   value={targetRole}
                   onChange={(e) => setTargetRole(e.target.value)}
-                  className="w-full text-xs font-mono p-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200"
+                  className="w-full text-xs font-sans p-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200"
                 />
               ) : (
-                <span className="text-xs font-mono font-bold text-slate-900 dark:text-white">{targetRole}</span>
+                <span className="text-xs font-sans font-semibold text-slate-900 dark:text-white">{targetRole}</span>
               )}
             </div>
 
             <div>
-              <span className="text-[10px] font-mono font-bold uppercase text-slate-500 dark:text-slate-400 block mb-1">
+              <span className="text-xs font-sans font-medium text-slate-600 dark:text-slate-400 block mb-1">
                 Industry Field
               </span>
               {isEditing ? (
@@ -267,15 +267,15 @@ const IdentityDestinationCard = ({
                   type="text"
                   value={industry}
                   onChange={(e) => setIndustry(e.target.value)}
-                  className="w-full text-xs font-mono p-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200"
+                  className="w-full text-xs font-sans p-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200"
                 />
               ) : (
-                <span className="text-xs font-mono font-bold text-slate-900 dark:text-white">{industry}</span>
+                <span className="text-xs font-sans font-semibold text-slate-900 dark:text-white">{industry}</span>
               )}
             </div>
 
             <div>
-              <span className="text-[10px] font-mono font-bold uppercase text-slate-500 dark:text-slate-400 block mb-1">
+              <span className="text-xs font-sans font-medium text-slate-600 dark:text-slate-400 block mb-1">
                 Target Milestone
               </span>
               {isEditing ? (

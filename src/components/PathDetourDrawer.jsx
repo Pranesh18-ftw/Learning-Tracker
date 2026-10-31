@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import { X, GitFork, ArrowLeft, Zap, Sparkles, Clock } from 'lucide-react';
+import { X, GitFork, ArrowLeft, Zap, Compass, Clock } from 'lucide-react';
 import { resolveDetoursForConcept } from '../utils/pathRouteResolver';
 import { useDialogA11y } from '../utils/a11y';
 
@@ -68,12 +68,12 @@ const PathDetourDrawer = ({
           </div>
 
           {/* Core Philosophy Notice */}
-          <div className="bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800 rounded-2xl p-4 text-xs space-y-1.5">
-            <div className="flex items-center gap-2 text-purple-800 dark:text-purple-300 font-bold">
-              <Sparkles className="w-4 h-4 text-purple-500" />
+          <div className="bg-electric-50/50 dark:bg-electric-950/30 border border-electric-200 dark:border-electric-900 rounded-2xl p-4 text-xs space-y-1.5">
+            <div className="flex items-center gap-2 text-electric-800 dark:text-electric-300 font-bold">
+              <Compass className="w-4 h-4 text-electric-600 dark:text-electric-400" />
               <span>Bounded & Reversible Exploration</span>
             </div>
-            <p className="text-purple-900/80 dark:text-purple-300/80 font-medium leading-relaxed">
+            <p className="text-slate-700 dark:text-slate-300 font-medium leading-relaxed">
               Curiosity strengthens engineering intuition. This detour is bounded (15–20 min) and will not break or distort your main route progression.
             </p>
           </div>

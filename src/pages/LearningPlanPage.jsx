@@ -7,7 +7,9 @@ import {
   Plus,
   CheckCircle,
   Calendar,
-  CheckCircle2
+  CheckCircle2,
+  Layers,
+  Trash2
 } from 'lucide-react';
 import {
   getLocalDateKey,
@@ -18,6 +20,7 @@ import PathDestinationHeader from '../components/PathDestinationHeader';
 import PathRealityBar from '../components/PathRealityBar';
 import PathWeeklyRoute from '../components/PathWeeklyRoute';
 import PathDetourDrawer from '../components/PathDetourDrawer';
+import ScheduleTreeSelector from '../components/ScheduleTreeSelector';
 import {
   resolveDestination,
   buildWeeklyRouteStops,
@@ -84,6 +87,8 @@ const LearningPlanPage = () => {
 
   // View state: 'route' (visual journey) | 'grid' (classic calendar breakdown)
   const [viewMode, setViewMode] = useState('route');
+  const [planNotice, setPlanNotice] = useState(null);
+  const [showTreeScheduler, setShowTreeScheduler] = useState(false);
 
   // Reality parameters initialized from Identity control room
   const initialReality = useMemo(() => deriveRealityFromIdentity(), []);
@@ -107,7 +112,8 @@ const LearningPlanPage = () => {
       updateSettings({
         ...settings,
         dailyLearningHours: newBudget / 60,
-        dailyGoalHours: newBudget / 60
+        dailyGoalHours: newBudget / 60,
+        pomodoroWorkDuration: newBudget
       });
     }
   };
@@ -245,6 +251,7 @@ const LearningPlanPage = () => {
     }
 
     if (startFocusSession) {
+      const configuredMins = settings?.pomodoroWorkDuration || Number(loadIdentity()?.timeReality?.weekdayMinutes) || stop.estimatedMinutes || 25;
       startFocusSession({
         ...stop,
         subtaskId: targetSubtaskId,
@@ -252,9 +259,9 @@ const LearningPlanPage = () => {
         taskName: stop.name,
         subjectName: stop.subjectName || activeSubject?.name,
         phaseName: stop.phaseName,
-        time: stop.estimatedMinutes || 25,
+        time: configuredMins,
         glyph: stop.glyph
-      }, stop.estimatedMinutes || 25);
+      }, configuredMins);
     } else {
       navigate('/');
     }
@@ -427,7 +434,8 @@ const LearningPlanPage = () => {
     });
 
     if (incompleteItems.length === 0) {
-      alert('No incomplete tasks found for auto assignment.');
+      setPlanNotice('All milestones in this domain are already scheduled or completed.');
+      setTimeout(() => setPlanNotice(null), 4000);
       return;
     }
 
@@ -443,8 +451,81 @@ const LearningPlanPage = () => {
     storeAutoAssignAction(batchId);
   };
 
+  const handleScheduleMilestone = (subjectId, phaseId, taskId, subtaskId, scheduledDate) => {
+    if (!scheduledDate) return;
+    setLearningPlan(prev => {
+      const plan = prev || [];
+      const existingIdx = plan.findIndex(item =>
+        item.subjectId === subjectId &&
+        item.phaseId === phaseId &&
+        item.taskId === taskId &&
+        (subtaskId ? item.subtaskId === subtaskId : !item.subtaskId)
+      );
+
+      if (existingIdx >= 0) {
+        const updated = [...plan];
+        updated[existingIdx] = {
+          ...updated[existingIdx],
+          scheduledDate,
+          isAutoAssigned: false
+        };
+        return updated;
+      }
+
+      return [
+        ...plan,
+        {
+          id: `plan-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          subjectId,
+          phaseId,
+          taskId,
+          subtaskId: subtaskId || null,
+          scheduledDate,
+          isAutoAssigned: false
+        }
+      ];
+    });
+
+    setPlanNotice(`Milestone scheduled for ${scheduledDate}`);
+    setTimeout(() => setPlanNotice(null), 3500);
+  };
+
+  const handleUnscheduleMilestone = (subjectId, phaseId, taskId, subtaskId) => {
+    setLearningPlan(prev => (prev || []).filter(item =>
+      !(item.subjectId === subjectId &&
+        item.phaseId === phaseId &&
+        item.taskId === taskId &&
+        (subtaskId ? item.subtaskId === subtaskId : !item.subtaskId))
+    ));
+
+    setPlanNotice('Milestone removed from schedule');
+    setTimeout(() => setPlanNotice(null), 3000);
+  };
+
+  const handleRescheduleDate = (planId, newDate) => {
+    if (!planId || !newDate) return;
+    setLearningPlan(prev => (prev || []).map(item =>
+      item.id === planId ? { ...item, scheduledDate: newDate, isAutoAssigned: false } : item
+    ));
+    setPlanNotice(`Rescheduled to ${newDate}`);
+    setTimeout(() => setPlanNotice(null), 3000);
+  };
+
   return (
     <div className="max-w-6xl mx-auto space-y-8 pb-16">
+
+      {planNotice && (
+        <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-xs font-semibold text-amber-800 dark:text-amber-200 flex items-center justify-between anim-fade-in shadow-xs">
+          <span>{planNotice}</span>
+          <button
+            type="button"
+            onClick={() => setPlanNotice(null)}
+            className="text-amber-600 dark:text-amber-400 font-bold hover:underline ml-3"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {/* ── TOP CONTROLS & DUAL VIEW MODE SWITCH ── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -536,7 +617,20 @@ const LearningPlanPage = () => {
               </p>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowTreeScheduler(prev => !prev)}
+                className={`flex items-center gap-1.5 px-4 py-2 rounded-xl font-bold text-xs shadow-xs transition-all ${
+                  showTreeScheduler
+                    ? 'bg-coral-500 hover:bg-coral-600 text-white shadow-coral-500/20'
+                    : 'bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-coral-400 dark:hover:border-coral-500'
+                }`}
+              >
+                <Layers className="w-3.5 h-3.5 text-current" />
+                {showTreeScheduler ? 'Close Tree Selector' : 'Manual Schedule from Tree'}
+              </button>
+
               <button
                 onClick={autoAssignTasks}
                 className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-electric-600 hover:bg-electric-700 text-white font-bold text-xs shadow-xs transition-colors"
@@ -560,11 +654,23 @@ const LearningPlanPage = () => {
             </div>
           </div>
 
+          {/* Interactive Manual Tree Scheduler */}
+          {showTreeScheduler && (
+            <ScheduleTreeSelector
+              subject={activeSubject}
+              learningPlan={learningPlan}
+              onScheduleMilestone={handleScheduleMilestone}
+              onUnscheduleMilestone={handleUnscheduleMilestone}
+              onClose={() => setShowTreeScheduler(false)}
+              today={today}
+            />
+          )}
+
           {/* Date-grouped Tasks */}
           <div className="space-y-4">
             {Object.keys(tasksByDate).length === 0 ? (
               <div className="bg-white dark:bg-[#0F172A] border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-3xl p-10 text-center text-slate-400 text-xs">
-                No scheduled tasks. Switch to Route View or click Auto-Assign.
+                No scheduled tasks. Switch to Route View, choose milestones from the tree, or click Auto-Assign.
               </div>
             ) : (
               Object.entries(tasksByDate)
@@ -595,30 +701,68 @@ const LearningPlanPage = () => {
                           return (
                             <div
                               key={task.id}
-                              className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-800 text-xs"
+                              className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-800 text-xs"
                             >
-                              <div>
-                                <div className="font-bold text-slate-900 dark:text-white">
-                                  {details.subtaskName || details.taskName}
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-bold text-slate-900 dark:text-white truncate">
+                                    {details.subtaskName || details.taskName}
+                                  </span>
+                                  {task.isAutoAssigned ? (
+                                    <span className="text-[10px] font-mono font-medium text-slate-400 bg-slate-200/70 dark:bg-slate-800 px-1.5 py-0.5 rounded">
+                                      Auto-assigned
+                                    </span>
+                                  ) : (
+                                    <span className="text-[10px] font-mono font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded">
+                                      Self-scheduled
+                                    </span>
+                                  )}
                                 </div>
-                                <div className="text-[11px] text-slate-400">
+                                <div className="text-[11px] text-slate-400 mt-0.5">
                                   {details.phaseName}
                                 </div>
                               </div>
 
-                              <button
-                                onClick={() => handleCompleteStop({
-                                  subjectId: task.subjectId,
-                                  phaseId: task.phaseId,
-                                  taskId: task.taskId,
-                                  targetSubtask: task.subtaskId ? { id: task.subtaskId } : null,
-                                  planEntryId: task.id
-                                })}
-                                className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition-colors"
-                              >
-                                <CheckCircle className="w-3.5 h-3.5" />
-                                Complete
-                              </button>
+                              <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                                {/* Inline Reschedule Input */}
+                                <input
+                                  type="date"
+                                  min={today}
+                                  value={task.scheduledDate || today}
+                                  onChange={(e) => {
+                                    if (e.target.value) {
+                                      handleRescheduleDate(task.id, e.target.value);
+                                    }
+                                  }}
+                                  className="px-2 py-1 text-[11px] font-mono rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-electric-500"
+                                  title="Reschedule to a different date"
+                                />
+
+                                {/* Unschedule */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleUnscheduleMilestone(task.subjectId, task.phaseId, task.taskId, task.subtaskId)}
+                                  className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+                                  title="Remove from schedule"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+
+                                {/* Complete */}
+                                <button
+                                  onClick={() => handleCompleteStop({
+                                    subjectId: task.subjectId,
+                                    phaseId: task.phaseId,
+                                    taskId: task.taskId,
+                                    targetSubtask: task.subtaskId ? { id: task.subtaskId } : null,
+                                    planEntryId: task.id
+                                  })}
+                                  className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition-colors shadow-xs"
+                                >
+                                  <CheckCircle className="w-3.5 h-3.5" />
+                                  Complete
+                                </button>
+                              </div>
                             </div>
                           );
                         })}

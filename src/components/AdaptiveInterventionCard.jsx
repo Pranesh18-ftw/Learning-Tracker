@@ -20,8 +20,7 @@ import {
   ChevronUp,
   ShieldCheck,
   Clock,
-  Compass,
-  Sparkles
+  Compass
 } from 'lucide-react';
 import { RECOMMENDATION_TYPES } from '../adaptive';
 
@@ -58,7 +57,7 @@ const AdaptiveInterventionCard = ({
       case RECOMMENDATION_TYPES.PREREQUISITE_SCAFFOLD:
         return <Zap className="w-3.5 h-3.5" />;
       case RECOMMENDATION_TYPES.SPACED_RETRIEVAL:
-        return <Sparkles className="w-3.5 h-3.5" />;
+        return <RotateCcw className="w-3.5 h-3.5" />;
       default:
         return <ShieldCheck className="w-3.5 h-3.5" />;
     }

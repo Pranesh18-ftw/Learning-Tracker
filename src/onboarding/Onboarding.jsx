@@ -27,7 +27,7 @@ import {
   Cpu,
   Layers,
   ShieldCheck,
-  Sparkles,
+  Clock,
   CheckCircle2
 } from 'lucide-react';
 import { useRoadmap } from '../context/RoadmapContext';
@@ -158,7 +158,7 @@ const Onboarding = ({ onComplete, onStepChange }) => {
                 </div>
                 <div>
                   <h4 className="text-xs font-bold text-slate-900 dark:text-white">Grounded Learning Records</h4>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-normal mt-0.5">
+                  <p className="text-xs text-slate-500 dark:text-slate-400 leading-normal mt-0.5">
                     Track authentic learning progress, physical builds, and focus records without arbitrary gamification.
                   </p>
                 </div>
@@ -166,11 +166,11 @@ const Onboarding = ({ onComplete, onStepChange }) => {
 
               <div className="p-3 sm:p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 flex items-start gap-3">
                 <div className="w-8 h-8 rounded-xl bg-electric-500/10 text-electric-600 dark:text-electric-400 flex items-center justify-center font-bold text-sm shrink-0 mt-0.5">
-                  <Sparkles className="w-4 h-4" />
+                  <Clock className="w-4 h-4" />
                 </div>
                 <div>
                   <h4 className="text-xs font-bold text-slate-900 dark:text-white">Authentic Time Planning</h4>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-normal mt-0.5">
+                  <p className="text-xs text-slate-500 dark:text-slate-400 leading-normal mt-0.5">
                     Plans adapt to your real weekdays, lab hours, and hardware constraints.
                   </p>
                 </div>
@@ -182,7 +182,7 @@ const Onboarding = ({ onComplete, onStepChange }) => {
                 </div>
                 <div>
                   <h4 className="text-xs font-bold text-slate-900 dark:text-white">Local-First Privacy</h4>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-normal mt-0.5">
+                  <p className="text-xs text-slate-500 dark:text-slate-400 leading-normal mt-0.5">
                     Your learning data stays on this device. Explore anonymously or attach Google later anytime.
                   </p>
                 </div>
@@ -233,46 +233,24 @@ const Onboarding = ({ onComplete, onStepChange }) => {
                 Choose your starting path
               </h2>
               <p className="text-xs text-slate-600 dark:text-slate-300 font-sans leading-relaxed">
-                Mount one of our curated STEM tracks below to start immediately, or explore the open Knowledge World.
+                Build or import a curriculum for any craft, discipline, or domain — Creativity, Psychology, Arts, Engineering, Sciences, or Philosophy.
               </p>
             </div>
 
-            {/* Curated Track Choices */}
-            <div className="space-y-3 pt-1">
-              {CURATED_ROADMAPS && CURATED_ROADMAPS.slice(0, 2).map((track) => (
-                <div
-                  key={track.id}
-                  className="p-4 rounded-2xl border-2 border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/50 hover:border-slate-400 dark:hover:border-slate-500 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3"
-                >
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      {track.id === 'electronics-embedded' ? (
-                        <Cpu className="w-4 h-4 text-amber-500" />
-                      ) : (
-                        <Layers className="w-4 h-4 text-electric-500" />
-                      )}
-                      <h3 className="font-bold text-sm text-slate-900 dark:text-white">
-                        {track.name}
-                      </h3>
-                    </div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 leading-normal">
-                      {track.description || 'First-principles progressive technical trajectory.'}
-                    </p>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => handleSelectCuratedTrack(track)}
-                    className="px-4 py-2 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-xs font-mono font-bold tracking-wider uppercase hover:opacity-90 transition-all shrink-0 cursor-pointer text-center"
-                  >
-                    Start Track
-                  </button>
+            {/* Primary Choice: Create or Import Custom Pathway */}
+            <div className="p-4 rounded-2xl border-2 border-electric-500/80 bg-electric-50/40 dark:bg-electric-950/20 shadow-xs space-y-3">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <Compass className="w-5 h-5 text-electric-600 dark:text-electric-400" />
+                  <h3 className="font-bold text-sm text-slate-900 dark:text-white">
+                    Create or Import Any Learning Track
+                  </h3>
                 </div>
-              ))}
-            </div>
+                <p className="text-xs text-slate-600 dark:text-slate-300 leading-normal">
+                  Design or paste roadmaps for any discipline (Creativity, Psychology, Computer Science, Music, Sciences). Compatible with Claude, ChatGPT, Gemini, or custom syllabi.
+                </p>
+              </div>
 
-            {/* Alternate Options */}
-            <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-2">
               <button
                 type="button"
                 id="onboarding-build-with-ai-btn"
@@ -282,19 +260,59 @@ const Onboarding = ({ onComplete, onStepChange }) => {
                   else if (onComplete) onComplete();
                   navigate('/roadmap');
                 }}
-                className="w-full py-2.5 px-4 rounded-xl border border-electric-300 dark:border-electric-800 bg-electric-50/50 dark:bg-electric-950/30 text-electric-700 dark:text-electric-300 font-mono text-xs font-bold transition-colors flex items-center justify-center gap-2 hover:bg-electric-100"
+                className="w-full py-2.5 px-4 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-mono text-xs font-bold tracking-wider uppercase hover:opacity-90 transition-all flex items-center justify-center gap-2 cursor-pointer shadow-xs"
               >
-                <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                <span>Build with Any AI (Universal Roadmap Bridge)</span>
+                <span>Create / Import Custom Pathway</span>
+                <ArrowRight className="w-4 h-4" />
               </button>
+            </div>
 
+            {/* Optional Pre-built Starter Examples */}
+            <div className="space-y-2.5 pt-1">
+              <div className="text-[11px] font-mono font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                Or pick a pre-built foundational example:
+              </div>
+              {CURATED_ROADMAPS && CURATED_ROADMAPS.slice(0, 2).map((track) => (
+                <div
+                  key={track.id}
+                  className="p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 hover:border-slate-400 dark:hover:border-slate-600 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-2.5"
+                >
+                  <div className="space-y-0.5">
+                    <div className="flex items-center gap-2">
+                      {track.id === 'electronics-embedded' ? (
+                        <Cpu className="w-4 h-4 text-amber-500" />
+                      ) : (
+                        <Layers className="w-4 h-4 text-electric-500" />
+                      )}
+                      <h4 className="font-bold text-xs text-slate-900 dark:text-white">
+                        {track.name}
+                      </h4>
+                    </div>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-normal">
+                      {track.description || 'Structured foundational technical trajectory.'}
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handleSelectCuratedTrack(track)}
+                    className="px-3 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-mono font-bold tracking-wide transition-all shrink-0 cursor-pointer text-center"
+                  >
+                    Load Example
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            {/* Alternate Options */}
+            <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-2">
               <button
                 type="button"
                 id="onboarding-explore-world-btn"
                 onClick={handleExploreKnowledgeWorld}
-                className="w-full py-3 px-4 rounded-xl border-2 border-slate-300 dark:border-slate-700 hover:border-slate-900 dark:hover:border-slate-400 font-mono text-xs font-bold text-slate-800 dark:text-slate-200 transition-colors flex items-center justify-center gap-2"
+                className="w-full py-2.5 px-4 rounded-xl border-2 border-slate-200 dark:border-slate-700 hover:border-slate-900 dark:hover:border-slate-400 font-mono text-xs font-bold text-slate-800 dark:text-slate-200 transition-colors flex items-center justify-center gap-2"
               >
-                <span>Explore Knowledge World</span>
+                <span>Explore Open Knowledge World</span>
                 <ArrowRight className="w-3.5 h-3.5" />
               </button>
 

@@ -138,7 +138,7 @@ const CapacitorInteractiveStage = ({ visual }) => {
   const voltageFraction = Math.max(0, Math.min(1, capacitorVoltage / supplyVoltage));
 
   return (
-    <div className="bg-gradient-to-br from-electric-600 to-indigo-700 rounded-3xl p-6 text-white shadow-xl relative overflow-hidden flex flex-col justify-between h-full">
+    <div className="glass-panel-warm-interactive rounded-3xl p-6 text-white shadow-2xl relative overflow-hidden flex flex-col justify-between h-full">
       {/* Header with Classification Badge */}
       <div className="flex items-center justify-between z-10 flex-wrap gap-2">
         <span className="bg-white/20 backdrop-blur-md px-3 py-1 rounded-full text-xs font-bold tracking-wide uppercase flex items-center gap-1.5">
@@ -309,7 +309,7 @@ const OhmsLawInteractiveStage = ({ visual }) => {
   const powerWatts = (voltage * currentAmperes).toFixed(3);
 
   return (
-    <div className="bg-gradient-to-br from-electric-600 to-blue-700 rounded-3xl p-6 text-white shadow-xl relative overflow-hidden flex flex-col justify-between h-full">
+    <div className="glass-panel-warm-interactive bg-gradient-to-br from-blue-600/40 via-indigo-600/30 to-blue-900/50 rounded-3xl p-6 text-white shadow-2xl relative overflow-hidden flex flex-col justify-between h-full border border-blue-400/25">
       <div className="flex items-center justify-between z-10 flex-wrap gap-2">
         <span className="bg-white/20 backdrop-blur-md px-3 py-1 rounded-full text-xs font-bold tracking-wide uppercase flex items-center gap-1.5">
           <span>🔬</span> Ohm's Law Workbench
@@ -408,7 +408,7 @@ const BjtInteractiveStage = ({ visual }) => {
   const isSaturated = baseSwitchOn;
 
   return (
-    <div className="bg-gradient-to-br from-violet-600 to-indigo-700 rounded-3xl p-6 text-white shadow-xl relative overflow-hidden flex flex-col justify-between h-full">
+    <div className="glass-panel-warm-interactive rounded-3xl p-6 text-white shadow-2xl relative overflow-hidden flex flex-col justify-between h-full">
       <div className="flex items-center justify-between z-10 flex-wrap gap-2">
         <span className="bg-white/20 backdrop-blur-md px-3 py-1 rounded-full text-xs font-bold tracking-wide uppercase flex items-center gap-1.5">
           <span>🔌</span> BJT Switching Circuit
@@ -484,58 +484,169 @@ const BjtInteractiveStage = ({ visual }) => {
 };
 
 /* =========================================================================
-   4. DIODE SCHEMATIC & P-N JUNCTION STAGE (Conceptual Educational Model)
+   4. DIODE SCHEMATIC & P-N JUNCTION STAGE (Physical Glassmorphic Model)
    ========================================================================= */
 const DiodeDiagramStage = ({ visual }) => {
   const [forwardBias, setForwardBias] = useState(true);
 
   return (
-    <div className="bg-gradient-to-br from-emerald-600 to-teal-700 rounded-3xl p-6 text-white shadow-xl relative overflow-hidden flex flex-col justify-between h-full">
+    <div className="glass-panel-warm-interactive rounded-3xl p-5 text-white shadow-2xl relative overflow-hidden flex flex-col justify-between h-full border border-white/15">
+      {/* Top Header */}
       <div className="flex items-center justify-between z-10 flex-wrap gap-2">
-        <span className="bg-white/20 backdrop-blur-md px-3 py-1 rounded-full text-xs font-bold tracking-wide uppercase flex items-center gap-1.5">
+        <span className="glass-pill-warm px-3 py-1 rounded-full text-xs font-bold tracking-wide uppercase flex items-center gap-1.5 text-amber-300 border border-amber-400/30">
           <span>⚡</span> Semiconductor Junction
         </span>
-        <span className="text-[10px] font-mono font-bold bg-emerald-200 text-slate-950 px-2 py-0.5 rounded-full">
-          CONCEPTUAL MODEL
+        <span className="text-[10px] font-mono font-bold bg-white/10 text-white/90 px-2 py-0.5 rounded-full border border-white/15">
+          PHYSICAL MODEL
         </span>
-        <span className="font-mono text-xs font-semibold text-emerald-100">
-          V_threshold ≈ 0.7 V (Si)
+        <span className="font-mono text-xs font-semibold text-slate-300">
+          V_th ≈ 0.7 V (Si)
         </span>
       </div>
 
-      <div className="my-4 z-10 space-y-4">
-        <div className="bg-slate-900/60 backdrop-blur-md rounded-2xl p-5 border border-white/20 flex flex-col items-center justify-center">
-          <div className="w-full flex items-center justify-center py-2">
-            <DiodeSymbol className="w-32 h-14" />
+      {/* Hero Visual: 3D-like Luminous Crystal Semiconductor Junction */}
+      <div className="my-3 z-10 space-y-3">
+        <div className="relative rounded-2xl p-4 bg-black/30 backdrop-blur-xl border border-white/15 shadow-inner overflow-hidden">
+          {/* Subtle Ambient Refraction Behind the Crystal */}
+          <div className="absolute inset-0 bg-gradient-to-r from-rose-500/10 via-amber-500/5 to-cyan-500/10 pointer-events-none" />
+          
+          {/* Conduction Status Banner */}
+          <div className="flex items-center justify-between text-xs font-semibold mb-3 px-1">
+            <span className="flex items-center gap-1.5 text-slate-300 text-[11px] font-mono">
+              <span className={`w-2 h-2 rounded-full ${forwardBias ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400'}`} />
+              {forwardBias ? 'Forward Bias (Conducts)' : 'Reverse Bias (Blocks)'}
+            </span>
+            <span className="font-mono text-[11px] text-amber-300">
+              {forwardBias ? 'I_forward ≫ 0 mA' : 'I_leakage ≈ 0 µA'}
+            </span>
           </div>
 
-          <div className="w-full grid grid-cols-2 gap-2 mt-2 pt-3 border-t border-white/10 text-center font-mono text-xs">
-            <div className={`p-2 rounded-xl border ${forwardBias ? 'bg-emerald-500/30 border-emerald-400' : 'bg-white/5 border-white/10'}`}>
-              <div className="font-bold text-emerald-200">ANODE (P)</div>
-              <div className="text-[10px] text-slate-300">Majority Holes</div>
+          {/* Dual Crystal Blocks: P-Type (Anode) & N-Type (Cathode) */}
+          <div className="relative flex items-center justify-between gap-1.5 h-32 sm:h-36 px-1">
+            
+            {/* ANODE: P-Type Ruby-Amber Crystal Block */}
+            <div className="flex-1 h-full rounded-2xl bg-gradient-to-br from-rose-500/25 via-amber-500/15 to-rose-950/40 border border-rose-400/40 p-2 sm:p-3 flex flex-col justify-between relative shadow-[inset_0_1px_1px_rgba(255,255,255,0.4),0_8px_20px_rgba(244,63,94,0.15)] backdrop-blur-md overflow-hidden">
+              <div className="flex items-center justify-between text-[9px] sm:text-[10px] font-mono font-bold">
+                <span className="text-rose-300">ANODE (+)</span>
+                <span className="text-rose-200/80 hidden sm:inline">h+ holes</span>
+              </div>
+
+              {/* Glowing Holes (p-carriers) */}
+              <div className="grid grid-cols-3 gap-1.5 sm:gap-2 my-auto place-items-center">
+                {[...Array(6)].map((_, i) => (
+                  <div
+                    key={i}
+                    className="w-4 h-4 sm:w-5 sm:h-5 rounded-full bg-rose-500/40 border border-rose-300/80 text-rose-200 text-[9px] sm:text-[10px] font-black flex items-center justify-center shadow-[0_0_8px_rgba(244,63,94,0.6)]"
+                  >
+                    +
+                  </div>
+                ))}
+              </div>
+
+              <div className="text-center font-display font-black text-sm sm:text-lg text-rose-200/90 tracking-wider">
+                P-TYPE
+              </div>
             </div>
-            <div className={`p-2 rounded-xl border ${forwardBias ? 'bg-emerald-500/30 border-emerald-400' : 'bg-white/5 border-white/10'}`}>
-              <div className="font-bold text-emerald-200">CATHODE (N)</div>
-              <div className="text-[10px] text-slate-300">Majority Electrons</div>
+
+            {/* CENTRAL JUNCTION & DEPLETION REGION */}
+            <div className={`transition-all duration-300 flex flex-col items-center justify-center relative shrink-0 ${
+              forwardBias ? 'w-7 sm:w-10' : 'w-10 sm:w-16'
+            }`}>
+              {/* Depletion Barrier Layer */}
+              <div className={`w-full h-full rounded-xl border border-dashed flex flex-col items-center justify-center text-center transition-all ${
+                forwardBias
+                  ? 'bg-emerald-500/15 border-emerald-400/60 shadow-[0_0_12px_rgba(16,185,129,0.35)]'
+                  : 'bg-rose-500/25 border-rose-400/70 shadow-[0_0_16px_rgba(244,63,94,0.45)]'
+              }`}>
+                {forwardBias ? (
+                  <div className="space-y-0.5">
+                    <span className="text-emerald-300 text-xs font-black animate-pulse">➔</span>
+                    <span className="text-[7px] sm:text-[8px] font-mono font-bold text-emerald-300 uppercase block tracking-tighter">
+                      FLOW
+                    </span>
+                  </div>
+                ) : (
+                  <div className="space-y-0.5">
+                    <span className="text-rose-400 text-xs font-black">✖</span>
+                    <span className="text-[7px] sm:text-[8px] font-mono font-bold text-rose-300 uppercase block tracking-tighter">
+                      BLOCK
+                    </span>
+                  </div>
+                )}
+              </div>
             </div>
+
+            {/* CATHODE: N-Type Sapphire-Cyan Crystal Block */}
+            <div className="flex-1 h-full rounded-2xl bg-gradient-to-br from-cyan-500/25 via-blue-500/15 to-indigo-950/40 border border-cyan-400/40 p-2 sm:p-3 flex flex-col justify-between relative shadow-[inset_0_1px_1px_rgba(255,255,255,0.4),0_8px_20px_rgba(14,165,233,0.15)] backdrop-blur-md overflow-hidden">
+              <div className="flex items-center justify-between text-[9px] sm:text-[10px] font-mono font-bold">
+                <span className="text-cyan-300">CATHODE (-)</span>
+                <span className="text-cyan-200/80 hidden sm:inline">e- electrons</span>
+              </div>
+
+              {/* Glowing Electrons (n-carriers) */}
+              <div className="grid grid-cols-3 gap-1.5 sm:gap-2 my-auto place-items-center">
+                {[...Array(6)].map((_, i) => (
+                  <div
+                    key={i}
+                    className="w-4 h-4 sm:w-5 sm:h-5 rounded-full bg-cyan-500/40 border border-cyan-300/80 text-cyan-200 text-[9px] sm:text-[10px] font-black flex items-center justify-center shadow-[0_0_8px_rgba(14,165,233,0.6)]"
+                  >
+                    −
+                  </div>
+                ))}
+              </div>
+
+              <div className="text-center font-display font-black text-sm sm:text-lg text-cyan-200/90 tracking-wider">
+                N-TYPE
+              </div>
+            </div>
+          </div>
+
+          {/* Schematic Diode Circuit Leads Representation */}
+          <div className="mt-3 pt-2.5 border-t border-white/10 flex items-center justify-between px-1 sm:px-2 text-[10px] sm:text-[11px] font-mono text-slate-300">
+            <span className="text-rose-300 font-bold">Anode (P)</span>
+            <div className="flex items-center gap-1 opacity-80">
+              <span className="h-0.5 w-3 sm:w-6 bg-slate-400" />
+              <DiodeSymbol className="w-8 sm:w-12 h-5 sm:h-6 text-white inline-block" />
+              <span className="h-0.5 w-3 sm:w-6 bg-slate-400" />
+            </div>
+            <span className="text-cyan-300 font-bold">Cathode (N)</span>
           </div>
         </div>
       </div>
 
-      <div className="bg-white/10 backdrop-blur-md rounded-2xl p-3 border border-white/15 z-10 flex flex-col gap-2">
-        <div className="flex items-center justify-between">
-          <button
-            onClick={() => setForwardBias(!forwardBias)}
-            className="px-3 py-1.5 rounded-xl font-bold text-xs bg-amber-400 text-slate-950 shadow-md active:scale-95"
-          >
-            {forwardBias ? 'BIAS: FORWARD (+0.7V MODEL)' : 'BIAS: REVERSE (-5V)'}
-          </button>
-          <span className="text-[11px] font-mono text-emerald-100">
-            {forwardBias ? 'Depletion Collapsed ➔ Conduction' : 'Depletion Widened ➔ Blocked'}
+      {/* Tactile Bias Switch Controls */}
+      <div className="bg-white/5 backdrop-blur-md rounded-2xl p-3 border border-white/10 z-10 flex flex-col gap-2.5">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setForwardBias(true)}
+              className={`px-3 py-1.5 rounded-full font-bold text-xs transition-all cursor-pointer ${
+                forwardBias
+                  ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-[0_2px_12px_rgba(16,185,129,0.4)] border border-white/30'
+                  : 'bg-white/10 text-slate-300 hover:bg-white/15 border border-white/10'
+              }`}
+            >
+              Forward Bias (+0.7V)
+            </button>
+            <button
+              onClick={() => setForwardBias(false)}
+              className={`px-3 py-1.5 rounded-full font-bold text-xs transition-all cursor-pointer ${
+                !forwardBias
+                  ? 'bg-gradient-to-r from-rose-500 to-amber-600 text-white shadow-[0_2px_12px_rgba(244,63,94,0.4)] border border-white/30'
+                  : 'bg-white/10 text-slate-300 hover:bg-white/15 border border-white/10'
+              }`}
+            >
+              Reverse Bias (-5.0V)
+            </button>
+          </div>
+
+          <span className="text-[11px] font-mono font-semibold text-amber-200">
+            {forwardBias ? 'V_D ≥ 0.7V ➔ Low Resistance' : 'V_D < 0.7V ➔ High Barrier'}
           </span>
         </div>
-        <div className="text-[10px] text-emerald-200 border-t border-white/10 pt-1">
-          0.7V is an educational model threshold for Silicon (Germanium ≈ 0.3V, Schottky ≈ 0.2–0.4V).
+
+        <div className="text-[10px] text-slate-400 border-t border-white/10 pt-1 leading-snug">
+          Educational Silicon Model: Forward voltage collapses the depletion region, allowing diffusion current to surge exponentially (Shockley equation).
         </div>
       </div>
     </div>

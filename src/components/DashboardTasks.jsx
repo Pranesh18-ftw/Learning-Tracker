@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useRoadmap } from '../context/RoadmapContext';
 import { getLocalDateKey, addDaysToDateKey } from '../utils/dateUtils';
 import { CURATED_ROADMAPS } from '../data/curatedRoadmaps';
@@ -9,9 +10,18 @@ import AdaptiveInterventionCard from './AdaptiveInterventionCard';
 import { resolveLearningVisual, resolveProofCriteria, resolveChallengePrompt } from '../utils/visualResolver';
 import { resolveTaskWhyTrace } from '../utils/whyResolver';
 import { updateTrajectoryDestination } from '../utils/trajectoryResolver';
-import { Play, CheckCircle2, RotateCcw, Clock, Sparkles, BookOpen, Trophy, Compass, X, Layers } from 'lucide-react';
+import { loadIdentity } from '../utils/identityRealityResolver';
+import { Play, CheckCircle2, RotateCcw, Clock, BookOpen, Trophy, Compass, X, Layers } from 'lucide-react';
 
-const PERSONALITY_PUNCTUATION = [
+const GENERAL_PUNCTUATION = [
+  "Deliberate practice turns hidden assumptions into transparent mechanics.",
+  "Deep synthesis happens one authentic iteration at a time.",
+  "Clarity is built through patient deconstruction and testing.",
+  "Back at the workbench. Ready for the next breakthrough?",
+  "First principles yield what conventional patterns miss."
+];
+
+const ELECTRONICS_PUNCTUATION = [
   "The electrons were not consulted, but they complied anyway.",
   "Kirchhoff is nodding approvingly at your circuit.",
   "That minus sign had other plans, but you caught it.",
@@ -28,6 +38,7 @@ const PERSONALITY_PUNCTUATION = [
  * - Connected sequential guided path
  */
 const DashboardTasks = () => {
+  const navigate = useNavigate();
   const {
     subjects,
     getNextSubtask,
@@ -68,14 +79,33 @@ const DashboardTasks = () => {
   const [showWhy, setShowWhy] = useState(false);
   const [showMissionBrief, setShowMissionBrief] = useState(false);
 
-  // Timer State
-  const defaultDurationMinutes = settings?.pomodoroWorkDuration || 25;
+  // Identity Time Reality Synchronization
+  const [identityState, setIdentityState] = useState(() => loadIdentity());
+
+  useEffect(() => {
+    const handleIdentityUpdated = (e) => {
+      setIdentityState(e.detail || loadIdentity());
+    };
+    window.addEventListener('learningTracker_identity_updated', handleIdentityUpdated);
+    return () => window.removeEventListener('learningTracker_identity_updated', handleIdentityUpdated);
+  }, []);
+
+  // Timer State derived directly from Identity & Settings
+  const identityWeekdayMins = identityState?.timeReality?.weekdayMinutes;
+  const defaultDurationMinutes = identityWeekdayMins || settings?.pomodoroWorkDuration || 25;
   const [timeLeft, setTimeLeft] = useState(defaultDurationMinutes * 60);
   const [isTimerRunning, setIsTimerRunning] = useState(false);
   const endTimeRef = useRef(null);
   const sessionStartTimeRef = useRef(null);
   const elapsedMsRef = useRef(0);
   const timerIntervalRef = useRef(null);
+
+  // Keep timer synced with updated identity settings when not running
+  useEffect(() => {
+    if (!isTimerRunning) {
+      setTimeLeft(defaultDurationMinutes * 60);
+    }
+  }, [defaultDurationMinutes, isTimerRunning]);
 
   // Reflection Modal Form
   const [reflectionNotes, setReflectionNotes] = useState('');
@@ -96,11 +126,6 @@ const DashboardTasks = () => {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [workflowState]);
-
-  // Random personality moment
-  const punctuationQuote = useMemo(() => {
-    return PERSONALITY_PUNCTUATION[Math.floor(Math.random() * PERSONALITY_PUNCTUATION.length)];
-  }, []);
 
   // Helper to extract task details from learning plan entry
   const findTaskDetailsFromLearningPlan = useCallback(
@@ -179,8 +204,12 @@ const DashboardTasks = () => {
 
   // Synchronize next task
   useEffect(() => {
-    // 1. Check if canonical currentLearningContext is selected (Unification Pass #12 & #13)
-    if (currentLearningContext && subjects?.length > 0) {
+    // 1. Check if canonical currentLearningContext is selected for active domain (or globally)
+    if (
+      currentLearningContext &&
+      (!selectedSubjectId || currentLearningContext.subjectId === selectedSubjectId) &&
+      subjects?.length > 0
+    ) {
       const subject = subjects.find(s => s.id === currentLearningContext.subjectId);
       const phase = subject?.phases?.find(p => p.id === currentLearningContext.phaseId);
       const task = phase?.tasks?.find(t => t.id === currentLearningContext.taskId);
@@ -201,7 +230,7 @@ const DashboardTasks = () => {
               conceptId: subtask.conceptId || task.conceptId || null,
               visualId: subtask.visualId || task.visualId || null,
               learningVisual: subtask.learningVisual || task.learningVisual || null,
-              time: task.time || defaultDurationMinutes,
+              time: defaultDurationMinutes || task.time || 25,
               difficulty: task.difficulty || 'medium',
               learningUnits: task.learningUnits || [],
               doingTasks: task.doingTasks || [],
@@ -231,7 +260,7 @@ const DashboardTasks = () => {
             conceptId: task.conceptId || null,
             visualId: task.visualId || null,
             learningVisual: task.learningVisual || null,
-            time: task.time || defaultDurationMinutes,
+            time: defaultDurationMinutes || task.time || 25,
             difficulty: task.difficulty || 'medium',
             learningUnits: task.learningUnits || [],
             doingTasks: task.doingTasks || [],
@@ -248,7 +277,7 @@ const DashboardTasks = () => {
           return;
         }
       }
-      // If completed or removed, clear canonical context so it gracefully falls back
+      // If completed or removed within this subject, clear canonical context so it gracefully falls back
       selectLearningContext(null);
     }
 
@@ -314,6 +343,17 @@ const DashboardTasks = () => {
     }
     return activeSubject.phases[0];
   }, [activeSubject, nextTask]);
+
+  const isElectronicsDomain = useMemo(() => {
+    const text = `${activeSubject?.name || ''} ${nextTask?.taskName || ''} ${nextTask?.name || ''}`.toLowerCase();
+    return /circuit|electron|embedded|ohm|kirchhoff|hardware|firmware|transistor|stm32|esp32/i.test(text);
+  }, [activeSubject, nextTask]);
+
+  // Random personality moment calibrated to subject domain
+  const punctuationQuote = useMemo(() => {
+    const pool = isElectronicsDomain ? ELECTRONICS_PUNCTUATION : GENERAL_PUNCTUATION;
+    return pool[Math.floor(Math.random() * pool.length)];
+  }, [isElectronicsDomain]);
 
   // Data-Driven Visual Object Resolution
   const resolvedVisual = useMemo(() => {
@@ -386,12 +426,19 @@ const DashboardTasks = () => {
     return frames;
   }, [activePhase, activeSubject, nextTask, isTaskCompleted, defaultDurationMinutes]);
 
-  // Latest evidence record
+  // Latest evidence record (calibrated to selected domain or global)
+  const relevantSessions = useMemo(() => {
+    if (!sessions || sessions.length === 0) return [];
+    return selectedSubjectId
+      ? sessions.filter(s => s.subjectId === selectedSubjectId)
+      : sessions;
+  }, [sessions, selectedSubjectId]);
+
   const latestProof = useMemo(() => {
-    if (!sessions || sessions.length === 0) return null;
-    const sorted = [...sessions].reverse();
+    if (!relevantSessions || relevantSessions.length === 0) return null;
+    const sorted = [...relevantSessions].reverse();
     return sorted.find(s => s.notes && s.notes.trim().length > 0) || sorted[0];
-  }, [sessions]);
+  }, [relevantSessions]);
 
   // Wall-Clock Accurate Timer Tick
   const tickTimer = useCallback(() => {
@@ -413,12 +460,29 @@ const DashboardTasks = () => {
   // Start Focus
   const handleStartFocus = (taskToLaunch = nextTask) => {
     if (!taskToLaunch) return;
-    const taskMinutes = taskToLaunch.time || defaultDurationMinutes;
+    const taskMinutes = defaultDurationMinutes || taskToLaunch.time || 25;
+    const launchPayload = {
+      ...taskToLaunch,
+      time: taskMinutes
+    };
+    if (selectLearningContext && taskToLaunch.subjectId && taskToLaunch.taskId) {
+      selectLearningContext({
+        id: taskToLaunch.subtaskId || taskToLaunch.taskId,
+        taskId: taskToLaunch.taskId,
+        subtaskId: taskToLaunch.subtaskId || null,
+        name: taskToLaunch.name,
+        taskName: taskToLaunch.taskName || taskToLaunch.name,
+        subjectId: taskToLaunch.subjectId,
+        subjectName: taskToLaunch.subjectName,
+        phaseId: taskToLaunch.phaseId,
+        phaseName: taskToLaunch.phaseName
+      });
+    }
     if (startFocusSession) {
-      startFocusSession(taskToLaunch, taskMinutes);
+      startFocusSession(launchPayload, taskMinutes);
       return;
     }
-    setSelectedTask(taskToLaunch);
+    setSelectedTask(launchPayload);
     setTimeLeft(taskMinutes * 60);
     elapsedMsRef.current = 0;
     sessionStartTimeRef.current = Date.now();
@@ -733,6 +797,19 @@ const DashboardTasks = () => {
       difficulty: 'medium',
       isLearningPlanTask: false
     });
+    if (selectLearningContext) {
+      selectLearningContext({
+        id: frame.raw.subtaskId || frame.raw.taskId,
+        taskId: frame.raw.taskId,
+        subtaskId: frame.raw.subtaskId,
+        name: frame.name,
+        taskName: frame.taskName,
+        subjectId: frame.raw.subjectId,
+        subjectName: frame.raw.subjectName,
+        phaseId: frame.raw.phaseId,
+        phaseName: frame.raw.phaseName
+      });
+    }
   };
 
   // Format MM:SS
@@ -992,19 +1069,19 @@ const DashboardTasks = () => {
     <div className="space-y-8 select-none py-2">
 
       {/* ── COMPLETION REWARD BANNER ── */}
-      {lastAction && (
-        <div className="bg-emerald-50 dark:bg-emerald-950/50 border-2 border-emerald-500 rounded-2xl p-4 flex items-center justify-between shadow-md anim-pop">
+      {lastAction && (!selectedSubjectId || !lastAction.taskDetails?.subjectId || lastAction.taskDetails.subjectId === selectedSubjectId) && (
+        <div className="glass-panel-warm-interactive bg-emerald-950/40 border border-emerald-400/40 rounded-2xl p-4 flex items-center justify-between shadow-xl anim-pop backdrop-blur-xl">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-emerald-500 text-white flex items-center justify-center font-bold text-xl shadow-xs">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-400 to-teal-600 text-white flex items-center justify-center font-bold text-xl shadow-[0_0_15px_rgba(16,185,129,0.4)] border border-emerald-300/40">
               🎉
             </div>
             <div>
-              <div className="font-display font-bold text-sm text-emerald-900 dark:text-emerald-200">
+              <div className="font-display font-bold text-sm text-white">
                 {lastAction.taskDetails?.name
                   ? `Milestone Completed: “${lastAction.taskDetails.name}”`
                   : 'Milestone Completed! Take logged to permanent archive.'}
               </div>
-              <div className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+              <div className="text-xs font-medium text-emerald-300">
                 {punctuationQuote}
               </div>
             </div>
@@ -1014,7 +1091,7 @@ const DashboardTasks = () => {
             <button
               type="button"
               onClick={handleUndo}
-              className="btn-tactile-coral px-4 py-2 text-xs flex items-center gap-1.5 shadow-sm"
+              className="btn-tactile-coral px-4 py-2 text-xs flex items-center gap-1.5 shadow-sm rounded-full"
               title="Undo this completion and restore milestone"
             >
               <RotateCcw className="w-3.5 h-3.5" />
@@ -1028,7 +1105,7 @@ const DashboardTasks = () => {
                 if (clearLastAction) clearLastAction();
                 else if (storeCompleteAction) storeCompleteAction(null);
               }}
-              className="p-1.5 rounded-xl text-emerald-800 dark:text-emerald-200 hover:bg-emerald-200/60 dark:hover:bg-emerald-900/60 transition-colors cursor-pointer"
+              className="p-1.5 rounded-xl text-emerald-200 hover:bg-white/10 transition-colors cursor-pointer"
               title="Dismiss notification"
               aria-label="Dismiss completion notification"
             >
@@ -1039,7 +1116,7 @@ const DashboardTasks = () => {
       )}
 
       {/* ── ADAPTIVE LEARNING INTERVENTION (Prompt #40 NOW Surface) ── */}
-      {adaptiveState?.recommendations?.filter(r => r.surface === 'NOW').map(rec => (
+      {adaptiveState?.recommendations?.filter(r => r.surface === 'NOW' && (!selectedSubjectId || !r.subjectId || r.subjectId === selectedSubjectId)).map(rec => (
         <AdaptiveInterventionCard
           key={rec.id}
           recommendation={rec}
@@ -1056,7 +1133,9 @@ const DashboardTasks = () => {
              1. THE HERO CHALLENGE CARD (Truthful, Task-Aware Layout)
              Adapts: 2-column split if visual exists, full-width if no visual
              ══════════════════════════════════════════════════════════════ */}
-          <div className="tile-tactile p-6 sm:p-8">
+          <div className="tile-tactile p-6 sm:p-8 relative overflow-hidden">
+            <div className="glass-sheen-line" aria-hidden="true" />
+            <div className="glass-noise-material absolute inset-0 pointer-events-none rounded-[inherit]" aria-hidden="true" />
             <div className={`grid grid-cols-1 ${hasVisual ? 'lg:grid-cols-12 gap-8 items-stretch' : 'gap-6'}`}>
 
               {/* Left Column (5 cols): Rendered ONLY when authentic visual exists */}
@@ -1074,37 +1153,37 @@ const DashboardTasks = () => {
               <div className={`${hasVisual ? 'lg:col-span-7' : 'max-w-3xl mx-auto w-full'} flex flex-col justify-between space-y-5`}>
 
                 <div className="space-y-4">
-                  {/* Status & Session Badge */}
+                  {/* Status & Session Badge (Warm Glassmorphism) */}
                   <div className="flex flex-wrap items-center gap-2.5">
-                    <span className="bg-coral-50 dark:bg-coral-950/60 border border-coral-200 dark:border-coral-800 text-coral-600 dark:text-coral-400 font-extrabold text-xs uppercase px-3 py-1 rounded-full flex items-center gap-1.5 shadow-xs">
-                      <Sparkles className="w-3.5 h-3.5 fill-current" />
-                      Today's Challenge
+                    <span className="glass-pill-warm bg-amber-500/15 dark:bg-amber-500/20 border border-amber-500/30 dark:border-amber-400/40 text-amber-800 dark:text-amber-300 font-extrabold text-xs uppercase px-3.5 py-1.5 rounded-full flex items-center gap-1.5 shadow-[0_2px_12px_rgba(245,158,11,0.15)] dark:shadow-[0_2px_12px_rgba(245,158,11,0.25)]">
+                      <Play className="w-3.5 h-3.5 fill-current" />
+                      Today's Focus
                     </span>
 
-                    <span className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-xs px-3 py-1 rounded-full border border-slate-200 dark:border-slate-700 flex items-center gap-1">
+                    <span className="glass-pill-warm text-slate-700 dark:text-slate-200 font-bold text-xs px-3.5 py-1.5 rounded-full border border-black/10 dark:border-white/15 flex items-center gap-1.5">
                       <Clock className="w-3.5 h-3.5 opacity-60" />
                       {nextTask.time || defaultDurationMinutes} Min Focused Take
                     </span>
 
                     {nextTask.subjectName && (
-                      <span className="bg-electric-50 dark:bg-electric-950/40 text-electric-600 dark:text-electric-400 font-semibold text-xs px-2.5 py-1 rounded-full border border-electric-200 dark:border-electric-900">
+                      <span className="glass-pill-warm text-sky-700 dark:text-sky-300 font-semibold text-xs px-3.5 py-1.5 rounded-full border border-sky-500/25 dark:border-sky-400/30">
                         {nextTask.subjectName}
                       </span>
                     )}
                   </div>
 
-                  {/* Task Title */}
-                  <div className="text-xs font-mono font-bold uppercase tracking-wider text-slate-400">
+                  {/* Task Subtitle */}
+                  <div className="text-xs font-mono font-bold uppercase tracking-wider text-amber-700 dark:text-amber-300/80">
                     {nextTask.taskName || 'Concept Take'}
                   </div>
 
                   {/* Punchy, Clear Question */}
-                  <h1 className="font-display font-extrabold text-2xl sm:text-3xl text-slate-900 dark:text-white leading-tight tracking-tight">
+                  <h1 className="font-display font-black text-2xl sm:text-3xl lg:text-4xl text-slate-900 dark:text-white leading-tight tracking-tight drop-shadow-sm">
                     {nextTask.subtaskId ? nextTask.name : (nextTask.taskName || nextTask.name)}
                   </h1>
 
                   {/* Unpretentious Educational Rationale */}
-                  <p className="font-sans text-sm sm:text-base text-slate-600 dark:text-slate-300 leading-relaxed font-medium">
+                  <p className="font-sans text-sm sm:text-base text-slate-700 dark:text-slate-200/90 leading-relaxed font-normal">
                     {challengePrompt}
                   </p>
 
@@ -1119,7 +1198,7 @@ const DashboardTasks = () => {
                       </button>
 
                       {showCriteria && (
-                        <div className="mt-3 p-4 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border-2 border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-700 dark:text-slate-300 space-y-2 anim-pop">
+                        <div className="mt-3 p-4 glass-panel-warm-interactive rounded-2xl text-xs font-medium text-slate-800 dark:text-slate-200 space-y-2 anim-pop">
                           <div className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
                             <BookOpen className="w-4 h-4 text-electric-600" />
                             Target Proof Checklist:
@@ -1148,7 +1227,7 @@ const DashboardTasks = () => {
                       </button>
 
                       {showWhy && (
-                        <div className="mt-2.5 p-3.5 bg-violet-50/70 dark:bg-violet-950/30 rounded-2xl border border-violet-200 dark:border-violet-900/40 text-xs font-sans space-y-1.5 anim-pop">
+                        <div className="mt-2.5 p-3.5 glass-panel-warm-interactive rounded-2xl border border-violet-500/30 text-xs font-sans space-y-1.5 anim-pop">
                           <div className="flex items-center justify-between font-mono font-bold text-[11px] text-violet-800 dark:text-violet-300">
                             <span>CAPABILITY: {whyTrace.capabilityName}</span>
                             <span className="opacity-75">{whyTrace.clusterName}</span>
@@ -1177,7 +1256,7 @@ const DashboardTasks = () => {
                       </button>
 
                       {showMissionBrief && (
-                        <div className="mt-2.5 p-4 bg-slate-50 dark:bg-slate-800/80 rounded-2xl border-2 border-slate-200 dark:border-slate-700 text-xs space-y-3 anim-pop">
+                        <div className="mt-2.5 p-4 glass-panel-warm-interactive rounded-2xl text-xs space-y-3 anim-pop border border-white/12">
                           <div className="font-mono font-bold text-[11px] uppercase tracking-wider text-slate-500 pb-1 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
                             <span>Mission Execution Structure</span>
                             <span className="text-[10px] text-electric-600 dark:text-electric-400 font-bold">Progressive Components</span>
@@ -1327,15 +1406,17 @@ const DashboardTasks = () => {
                   <div className="flex items-center gap-2">
                     <button
                       onClick={() => handleOpenReflection(nextTask)}
-                      className="btn-tactile-ghost px-4 py-2 text-xs text-slate-700 dark:text-slate-300"
+                      className="btn-tactile-ghost px-4 py-2.5 text-xs flex items-center gap-1.5"
                     >
-                      📝 Note
+                      <span>📝</span>
+                      <span>Note</span>
                     </button>
                     <button
                       onClick={() => handleOpenPostpone(nextTask)}
-                      className="btn-tactile-ghost px-4 py-2 text-xs text-slate-700 dark:text-slate-300"
+                      className="btn-tactile-ghost px-4 py-2.5 text-xs flex items-center gap-1.5"
                     >
-                      📅 Postpone
+                      <span>📅</span>
+                      <span>Postpone</span>
                     </button>
                   </div>
                 </div>
@@ -1360,9 +1441,9 @@ const DashboardTasks = () => {
              3. RECENT PROVEN EVIDENCE ARCHIVE
              ══════════════════════════════════════════════════════════════ */}
           {latestProof && (
-            <div className="bg-gradient-to-r from-amber-500/10 to-orange-500/10 border-2 border-amber-300 dark:border-amber-700/60 rounded-3xl p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm">
+            <div className="tile-tactile p-6 bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-amber-500/5 border border-amber-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xl">
               <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-2xl bg-amber-500 text-white flex items-center justify-center font-bold text-xl shadow-md shrink-0">
+                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 text-white flex items-center justify-center font-bold text-xl shadow-[0_4px_16px_rgba(245,158,11,0.4)] shrink-0">
                   <Trophy className="w-6 h-6 stroke-[2.5]" />
                 </div>
                 <div>
@@ -1371,7 +1452,7 @@ const DashboardTasks = () => {
                       Recent Reflection
                     </span>
                     <span className="text-xs text-slate-400">·</span>
-                    <span className="text-xs font-bold text-slate-500">{latestProof.date || 'Recent'}</span>
+                    <span className="text-xs font-bold text-slate-500 dark:text-slate-400">{latestProof.date || 'Recent'}</span>
                   </div>
                   <h4 className="font-display font-bold text-base text-slate-900 dark:text-white mt-0.5">
                     “{latestProof.notes || 'Completed without notes.'}”
@@ -1379,8 +1460,8 @@ const DashboardTasks = () => {
                 </div>
               </div>
 
-              <div className="font-bold text-xs bg-white dark:bg-slate-800 px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xs shrink-0 text-slate-700 dark:text-slate-300">
-                {(sessions?.length ?? 0)} Total Sessions in Personal Archive
+              <div className="font-bold text-xs glass-pill-warm px-4 py-2 rounded-xl border border-white/15 shadow-xs shrink-0 text-slate-700 dark:text-slate-200">
+                {relevantSessions.length} {selectedSubjectId ? `Sessions in ${activeSubject?.name || 'Domain'}` : 'Total Sessions in Personal Archive'}
               </div>
             </div>
           )}
@@ -1395,13 +1476,32 @@ const DashboardTasks = () => {
           <h2 className="font-display font-black text-2xl text-slate-900 dark:text-white">
             {subjects && subjects.length > 0 ? "You Have Concluded This Arc!" : "Welcome to Learning Tracker"}
           </h2>
-          <p className="text-sm font-semibold text-slate-500 leading-relaxed">
-            {subjects && subjects.length > 0
-              ? "All milestones in this sequence have been completed. Select another domain or import a path to continue."
-              : "Mount one of our curated STEM tracks below to begin your guided learning adventure."}
-          </p>
+          {/* Custom Track Generator CTA */}
+          <div className="p-4 sm:p-5 rounded-2xl bg-slate-100/80 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row items-center justify-between gap-4 text-left">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 font-bold text-sm text-slate-900 dark:text-white">
+                <Compass className="w-4 h-4 text-electric-600 dark:text-electric-400" />
+                <span>Build or Import Custom Study Roadmap</span>
+              </div>
+              <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300">
+                Generate a structured, milestone-driven curriculum for any skill, craft, or engineering discipline.
+              </p>
+            </div>
+            <button
+              type="button"
+              id="dashboard-ai-generator-btn"
+              onClick={() => navigate('/roadmap')}
+              className="btn-tactile-electric px-4 py-2.5 text-xs sm:text-sm font-bold shrink-0 flex items-center gap-2 shadow-xs cursor-pointer"
+            >
+              <Compass className="w-4 h-4 text-white" />
+              <span>Open Roadmap Architect</span>
+            </button>
+          </div>
 
           <div className="space-y-3 pt-2 text-left">
+            <div className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              Or mount a curated foundational path:
+            </div>
             {CURATED_ROADMAPS.map((c) => (
               <div
                 key={c.id}
@@ -1425,7 +1525,7 @@ const DashboardTasks = () => {
 
       {/* Subtle Personality Footer */}
       <footer className="pt-4 text-center font-semibold text-xs text-slate-400">
-        Learning Tracker · Serious STEM with Tactile Clarity
+        Learning Tracker · First-Principles Learning with Tactile Clarity
       </footer>
     </div>
   );

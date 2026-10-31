@@ -37,6 +37,7 @@ import ArchiveIdentityHeader from '../components/ArchiveIdentityHeader';
 import ArchivePinnedShelf from '../components/ArchivePinnedShelf';
 import ArchiveLivingTimeline from '../components/ArchiveLivingTimeline';
 import ArchiveMemoryMomentModal from '../components/ArchiveMemoryMomentModal';
+import trophyBurstSvg from '../assets/achievements/trophy-burst.svg';
 
 const iconMap = {
   target: Target,
@@ -254,21 +255,44 @@ const AchievementsPage = () => {
       ) : (
         <div className="space-y-6 anim-fade-in">
 
-          {/* Overall Progress */}
-          <div className="bg-white dark:bg-slate-900 rounded-3xl border-2 border-slate-200 dark:border-slate-800 p-6 sm:p-8 shadow-sm">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold text-slate-900 dark:text-white">Milestone Unlocks</h2>
-              <div className="flex items-center gap-2">
-                <Award className="w-5 h-5 text-amber-500" />
-                <span className="text-lg font-black font-mono text-slate-900 dark:text-white">
-                  {unlockedCount}/{totalCount}
-                </span>
+          {/* Overall Progress with Heraldic Trophy Burst */}
+          <div className="surface-spatial-elevated rounded-3xl p-6 sm:p-8 relative overflow-hidden border border-stone-200 dark:border-stone-800 shadow-md">
+            <div className="glass-sheen-line" aria-hidden="true" />
+            <div className="glass-noise-material absolute inset-0 pointer-events-none rounded-[inherit]" aria-hidden="true" />
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 mb-6">
+              <div className="flex items-center gap-4">
+                <img
+                  src={trophyBurstSvg}
+                  alt="Trophy Celebration"
+                  className="w-16 h-16 sm:w-20 sm:h-20 object-contain shrink-0 filter drop-shadow-md"
+                />
+                <div>
+                  <div className="text-[11px] font-mono font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">
+                    Scholarly Capability Milestones
+                  </div>
+                  <h2 className="text-xl sm:text-2xl font-black font-display text-slate-900 dark:text-white mt-0.5">
+                    Hall of Verified Milestones
+                  </h2>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                    Authentic evidence milestones unlocked through deep deliberate practice.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 bg-stone-50 dark:bg-stone-900/80 px-4 py-2.5 rounded-2xl border border-stone-200 dark:border-stone-800 self-start sm:self-auto shadow-xs">
+                <Award className="w-6 h-6 text-amber-500 shrink-0" />
+                <div>
+                  <span className="text-[10px] font-mono uppercase text-slate-400 block font-bold">Unlocked</span>
+                  <span className="text-xl font-black font-mono text-slate-900 dark:text-white leading-none">
+                    {unlockedCount} / {totalCount}
+                  </span>
+                </div>
               </div>
             </div>
 
             <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-3 mb-6 overflow-hidden">
               <div
-                className="bg-emerald-500 h-3 rounded-full transition-all duration-500"
+                className="bg-emerald-500 h-3 rounded-full transition-all duration-500 shadow-sm"
                 style={{ width: `${totalCount > 0 ? (unlockedCount / totalCount) * 100 : 0}%` }}
               />
             </div>
@@ -310,8 +334,8 @@ const AchievementsPage = () => {
                       key={achievement.id}
                       className={`relative p-5 rounded-2xl border transition-all ${
                         achievement.unlocked
-                          ? `${colorClasses} shadow-sm`
-                          : 'bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700 opacity-60'
+                          ? 'surface-spatial-elevated border-amber-500/70 shadow-md hover:-translate-y-1'
+                          : 'surface-spatial-base border-stone-200 dark:border-stone-800 opacity-60'
                       }`}
                     >
                       <div className="flex items-center gap-3 mb-2">

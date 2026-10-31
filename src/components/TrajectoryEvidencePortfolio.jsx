@@ -23,7 +23,12 @@ const TrajectoryEvidencePortfolio = ({
     (subj.phases || []).forEach(ph => {
       (ph.tasks || []).forEach(tk => {
         const text = (tk.name || '').toLowerCase();
-        if (text.includes('project') || text.includes('build') || text.includes('monitor') || text.includes('circuit')) {
+        const phText = (ph.name || '').toLowerCase();
+        const isProjectLike = text.includes('project') || text.includes('build') || text.includes('monitor') ||
+          text.includes('prototype') || text.includes('capstone') || text.includes('routine') ||
+          text.includes('deliverable') || text.includes('showcase') || text.includes('portfolio') ||
+          phText.includes('project') || phText.includes('capstone') || phText.includes('deliverable');
+        if (isProjectLike) {
           projectTasks.push({
             ...tk,
             subjectName: subj.name,
@@ -47,9 +52,9 @@ const TrajectoryEvidencePortfolio = ({
   // Derive authentic stage badge
   const allText = primaryProject ? ((primaryProject.name || '') + ' ' + (primaryProject.subtasks || []).map(s => s.name).join(' ')).toLowerCase() : '';
   const badges = [];
-  if (allText.includes('build') || allText.includes('assembly')) badges.push('Built');
-  if (allText.includes('test') || allText.includes('simulate')) badges.push('Tested');
-  if (allText.includes('measure') || allText.includes('multimeter')) badges.push('Measured');
+  if (allText.includes('build') || allText.includes('assembly') || allText.includes('code') || allText.includes('implement')) badges.push('Built');
+  if (allText.includes('test') || allText.includes('simulate') || allText.includes('verify') || allText.includes('rehearse')) badges.push('Tested');
+  if (allText.includes('measure') || allText.includes('multimeter') || allText.includes('perform') || allText.includes('demo') || allText.includes('calibrate')) badges.push('Measured');
   const stageBadgeLabel = badges.length > 0 ? badges.join(' · ') : 'Completed Project';
 
   return (
@@ -62,7 +67,7 @@ const TrajectoryEvidencePortfolio = ({
             <Award className="w-4 h-4" />
           </div>
           <div>
-            <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400 block">
+            <span className="text-[10px] font-sans font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500 block">
               Practical Proof
             </span>
             <h2 className="font-display font-black text-xl text-slate-900 dark:text-white tracking-tight">
@@ -73,7 +78,7 @@ const TrajectoryEvidencePortfolio = ({
 
         <button
           onClick={() => navigate('/achievements')}
-          className="text-xs font-mono font-bold text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-1"
+          className="text-xs font-sans font-bold text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-1"
         >
           <span>Open Full Archive Museum</span>
           <ArrowUpRight className="w-3.5 h-3.5" />
@@ -90,7 +95,7 @@ const TrajectoryEvidencePortfolio = ({
           <p className="font-display font-bold text-slate-700 dark:text-slate-300 text-sm">
             No demonstrated project evidence yet.
           </p>
-          <p className="text-xs text-slate-500 dark:text-slate-400 font-sans max-w-md mx-auto">
+          <p className="text-xs text-slate-500 dark:text-slate-400 font-serif italic max-w-md mx-auto">
             Practical engineering projects completed in your learning route will appear here as permanent, inspectable proof of capability.
           </p>
         </div>
@@ -100,10 +105,10 @@ const TrajectoryEvidencePortfolio = ({
           <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
             <div className="space-y-1">
               <div className="flex items-center gap-2">
-                <span className="px-2.5 py-0.5 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 font-mono text-[10px] font-bold">
+                <span className="px-2.5 py-0.5 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 font-sans text-[10px] font-bold tracking-wide">
                   ✓ COMPLETED PROJECT BUILD
                 </span>
-                <span className="text-xs font-mono text-slate-400">
+                <span className="text-xs font-serif italic text-slate-500 dark:text-slate-400">
                   · {primaryProject.subjectName}
                 </span>
               </div>
@@ -113,7 +118,7 @@ const TrajectoryEvidencePortfolio = ({
             </div>
 
             <div className="flex items-center gap-2">
-              <span className="px-3 py-1 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-mono font-bold text-slate-700 dark:text-slate-300">
+              <span className="px-3 py-1 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-sans font-semibold text-slate-700 dark:text-slate-300">
                 {stageBadgeLabel}
               </span>
             </div>
@@ -122,14 +127,14 @@ const TrajectoryEvidencePortfolio = ({
           {/* Demonstrated Capabilities Chips */}
           {capabilities.length > 0 && (
             <div className="space-y-2 pt-2">
-              <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400 block">
+              <span className="text-[10px] font-sans font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500 block">
                 Capabilities Demonstrated:
               </span>
               <div className="flex flex-wrap gap-2">
                 {capabilities.map((cap, idx) => (
                   <span
                     key={idx}
-                    className="px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-900 dark:text-emerald-200 text-xs font-mono font-bold flex items-center gap-1.5"
+                    className="px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-900 dark:text-emerald-200 text-xs font-sans font-semibold flex items-center gap-1.5"
                   >
                     <span>✓</span>
                     <span>{cap}</span>
@@ -140,8 +145,8 @@ const TrajectoryEvidencePortfolio = ({
           )}
 
           {/* Actions Footer */}
-          <div className="pt-3 border-t border-slate-200 dark:border-slate-700 flex items-center justify-between text-xs font-mono">
-            <span className="text-slate-600 dark:text-slate-300">Permanent record in Archive</span>
+          <div className="pt-3 border-t border-slate-200 dark:border-slate-700 flex items-center justify-between text-xs font-sans">
+            <span className="font-serif italic text-slate-500 dark:text-slate-400">Permanent record in Archive</span>
             <button
               onClick={() => navigate('/achievements')}
               className="font-bold text-emerald-700 dark:text-emerald-300 hover:text-emerald-800 dark:hover:text-emerald-200 flex items-center gap-1"

@@ -46,11 +46,16 @@ export const normalizeRoadmap = (rawRoadmap) => {
 
   return subjectsArray.map((subject, sIdx) => {
     const subjectId = subject.id || `subj-${sIdx + 1}`;
-    const phases = (subject.phases || []).map((phase, pIdx) => {
+    const subjectName = subject.name || subject.title || subject.subjectName || subject.learnerContext?.primaryLearningGoal || `Subject ${sIdx + 1}`;
+    const rawPhases = Array.isArray(subject.phases) ? subject.phases : (Array.isArray(subject.learningArcs) ? subject.learningArcs : []);
+    const phases = rawPhases.map((phase, pIdx) => {
       const phaseId = phase.id || `${subjectId}-phase-${pIdx + 1}`;
-      const tasks = (phase.tasks || []).map((task, tIdx) => {
+      const phaseName = phase.name || phase.title || `Phase ${pIdx + 1}`;
+      const rawTasks = Array.isArray(phase.tasks) ? phase.tasks : (Array.isArray(phase.modules) ? phase.modules : []);
+      const tasks = rawTasks.map((task, tIdx) => {
         const taskId = task.id || `${phaseId}-task-${tIdx + 1}`;
-        const rawSubtasks = Array.isArray(task.subtasks) ? task.subtasks : [];
+        const taskName = task.name || task.title || task.topic || task.task || `Task ${tIdx + 1}`;
+        const rawSubtasks = Array.isArray(task.subtasks) ? task.subtasks : (Array.isArray(task.steps) ? task.steps : []);
         const normalizedSubtasks = rawSubtasks.map((st, stIdx) => {
           if (typeof st === 'string') {
             return {
@@ -63,7 +68,7 @@ export const normalizeRoadmap = (rawRoadmap) => {
           return {
             ...st,
             id: st.id || `${taskId}-sub-${stIdx + 1}`,
-            name: st.name || `Subtask ${stIdx + 1}`,
+            name: st.name || st.title || `Subtask ${stIdx + 1}`,
             completed: Boolean(st.completed),
             completedAt: st.completed ? (st.completedAt || null) : null
           };
@@ -77,7 +82,7 @@ export const normalizeRoadmap = (rawRoadmap) => {
         return {
           ...task,
           id: taskId,
-          name: task.name || `Task ${tIdx + 1}`,
+          name: taskName,
           subtasks: normalizedSubtasks,
           completed: isComplete,
           completedAt: isComplete ? (task.completedAt || null) : null
@@ -87,7 +92,7 @@ export const normalizeRoadmap = (rawRoadmap) => {
       return {
         ...phase,
         id: phaseId,
-        name: phase.name || `Phase ${pIdx + 1}`,
+        name: phaseName,
         tasks
       };
     });
@@ -95,7 +100,7 @@ export const normalizeRoadmap = (rawRoadmap) => {
     return {
       ...subject,
       id: subjectId,
-      name: subject.name || `Subject ${sIdx + 1}`,
+      name: subjectName,
       phases
     };
   });

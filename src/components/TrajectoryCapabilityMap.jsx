@@ -31,7 +31,7 @@ const TrajectoryCapabilityMap = ({
             <Layers className="w-4 h-4" />
           </div>
           <div>
-            <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400 block">
+            <span className="text-[10px] font-sans font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500 block">
               Core Competency Map
             </span>
             <h2 className="font-display font-black text-xl text-slate-900 dark:text-white tracking-tight">
@@ -41,7 +41,7 @@ const TrajectoryCapabilityMap = ({
         </div>
 
         {/* Legend */}
-        <div className="flex flex-wrap items-center gap-2 text-xs font-mono text-slate-600 dark:text-slate-400">
+        <div className="flex flex-wrap items-center gap-2 text-xs font-sans text-slate-600 dark:text-slate-400">
           <span className="flex items-center gap-1 font-bold text-emerald-600 dark:text-emerald-400">
             <span>✓</span> Demonstrated
           </span>
@@ -73,7 +73,7 @@ const TrajectoryCapabilityMap = ({
           >
             {/* Cluster Title */}
             <div className="space-y-1">
-              <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400 block">
+              <span className="text-[10px] font-sans font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500 block">
                 Cluster 0{cIdx + 1} · {cluster.domain}
               </span>
               <h3 className="font-display font-black text-base text-slate-900 dark:text-white">
@@ -97,11 +97,11 @@ const TrajectoryCapabilityMap = ({
                         <span className={`w-5 h-5 rounded-lg flex items-center justify-center text-xs font-black border ${status.color}`}>
                           {status.glyph}
                         </span>
-                        <span className="text-xs font-mono font-bold text-slate-900 dark:text-white group-hover:text-violet-600 dark:group-hover:text-violet-400 transition-colors">
+                        <span className="text-xs font-sans font-bold text-slate-900 dark:text-white group-hover:text-violet-600 dark:group-hover:text-violet-400 transition-colors">
                           {cap.name}
                         </span>
                       </div>
-                      <span className="text-[10px] font-mono text-slate-400 block pl-7">
+                      <span className="text-[10px] font-serif italic text-slate-500 dark:text-slate-400 block pl-7">
                         {status.label}
                       </span>
                     </div>
@@ -113,9 +113,9 @@ const TrajectoryCapabilityMap = ({
             </div>
 
             {/* Connecting Footer */}
-            <div className="pt-2 border-t border-slate-200 dark:border-slate-800 text-[10px] font-mono text-slate-400 flex items-center justify-between">
+            <div className="pt-2 border-t border-slate-200 dark:border-slate-800 text-[10px] font-sans text-slate-400 flex items-center justify-between">
               <span>{cluster.capabilities.length} Capabilities</span>
-              <span>Integrates in Projects →</span>
+              <span className="font-serif italic text-slate-500 dark:text-slate-400">Integrates in Projects →</span>
             </div>
 
           </div>

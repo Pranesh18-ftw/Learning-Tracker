@@ -143,7 +143,7 @@ const LearningArcModal = ({
                 {capabilitiesDeveloped.map((cap, idx) => (
                   <div key={idx} className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-start gap-2">
                     <span className="text-electric-500 font-bold">➔</span>
-                    <span>{cap}</span>
+                    <span>{typeof cap === 'string' ? cap : (cap?.name || cap?.title || cap?.capability || JSON.stringify(cap))}</span>
                   </div>
                 ))}
               </div>

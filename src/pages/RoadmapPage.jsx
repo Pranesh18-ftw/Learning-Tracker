@@ -17,11 +17,54 @@ import LearningWorldLandscape from '../components/LearningWorldLandscape';
 import ConceptDeepDiveDrawer from '../components/ConceptDeepDiveDrawer';
 import LearningArcModal from '../components/LearningArcModal';
 import FieldIntelligenceDrawer from '../components/FieldIntelligenceDrawer';
-import UniversalRoadmapBridgeModal from '../components/UniversalRoadmapBridgeModal';
+import UniversalRoadmapBridgeModal, { STEPS } from '../components/UniversalRoadmapBridgeModal';
 import { buildSubjectTopology } from '../utils/conceptRelationshipResolver';
+import { updateTrajectoryDestination } from '../utils/trajectoryResolver';
 import { CURATED_ROADMAPS } from '../data/curatedRoadmaps';
 import { getLocalDateKey } from '../utils/dateUtils';
-import { updateTrajectoryDestination } from '../utils/trajectoryResolver';
+
+const resolveSubjectHeadline = (subject) => {
+  if (!subject) return 'Mastery';
+  const lc = subject.learnerContext;
+  if (typeof lc?.targetDestination === 'string' && lc.targetDestination) {
+    return lc.targetDestination;
+  }
+  if (typeof lc?.primaryLearningGoal === 'string' && lc.primaryLearningGoal) {
+    return `Mastery of ${lc.primaryLearningGoal}`;
+  }
+  if (typeof lc?.goal === 'string' && lc.goal) {
+    return `Mastery of ${lc.goal}`;
+  }
+  if (typeof lc?.targetCapabilities === 'string' && lc.targetCapabilities) {
+    return lc.targetCapabilities;
+  }
+  if (Array.isArray(lc?.targetCapabilities) && lc.targetCapabilities.length > 0) {
+    const first = lc.targetCapabilities[0];
+    if (typeof first === 'string') return first;
+  }
+  const fi = subject.fieldIntelligence;
+  if (typeof fi?.fieldDefinition === 'string' && fi.fieldDefinition) {
+    return fi.fieldDefinition;
+  }
+  return `Mastery of ${subject.name || 'Domain'}`;
+};
+
+const resolveSubjectSubheadline = (subject, topology) => {
+  if (!subject) return '';
+  const fi = subject.fieldIntelligence;
+  if (fi?.currentState) {
+    if (typeof fi.currentState === 'string') return fi.currentState;
+    if (typeof fi.currentState === 'object') {
+      return fi.currentState.foundationalConsensus || fi.currentState.overallMaturity || '';
+    }
+  }
+  if (typeof fi?.fieldDefinition === 'string' && fi.fieldDefinition) {
+    return fi.fieldDefinition;
+  }
+  const regionsCount = topology?.regions?.length || 0;
+  const conceptsCount = topology?.allConcepts?.length || 0;
+  return `Structured progression across ${regionsCount} knowledge arcs and ${conceptsCount} milestones.`;
+};
 
 const RoadmapPage = () => {
   const navigate = useNavigate();
@@ -56,6 +99,7 @@ const RoadmapPage = () => {
 
   // Modals
   const [showImportModal, setShowImportModal] = useState(false);
+  const [importModalStep, setImportModalStep] = useState(STEPS.INTENT);
   const [deadlineModal, setDeadlineModal] = useState({ show: false, subjectId: null, deadline: '' });
 
   const currentConceptRef = useRef(null);
@@ -288,7 +332,7 @@ const RoadmapPage = () => {
       )}
 
       {/* ── TOP ORIENTATION & DOMAIN BAR ── */}
-      <div className="tile-tactile p-6 space-y-5">
+      <div className="tile-tactile p-4 sm:p-6 space-y-5">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
 
           {/* Domain Switcher & Title */}
@@ -305,20 +349,24 @@ const RoadmapPage = () => {
 
               {/* Multi-Domain Selector Pills */}
               {subjects && subjects.length > 1 && (
-                <div className="flex items-center gap-1.5 ml-2">
-                  {subjects.map(s => (
-                    <button
-                      key={s.id}
-                      onClick={() => setSelectedSubjectId(s.id)}
-                      className={`px-3 py-1 rounded-xl text-xs font-bold transition-all ${
-                        activeSubject?.id === s.id
-                          ? 'bg-electric-600 text-white shadow-xs'
-                          : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
-                      }`}
-                    >
-                      {s.name}
-                    </button>
-                  ))}
+                <div className="flex flex-wrap items-center gap-1.5 mt-1 sm:mt-0 sm:ml-2">
+                  {subjects.map(s => {
+                    const displayName = (s.name || '').length > 25 ? `${s.name.slice(0, 24)}…` : (s.name || 'Untitled');
+                    return (
+                      <button
+                        key={s.id}
+                        onClick={() => setSelectedSubjectId(s.id)}
+                        title={s.name}
+                        className={`px-3 py-1 rounded-xl text-xs font-bold transition-all max-w-[200px] truncate ${
+                          activeSubject?.id === s.id
+                            ? 'bg-electric-600 text-white shadow-xs'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
+                        }`}
+                      >
+                        {displayName}
+                      </button>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -381,10 +429,27 @@ const RoadmapPage = () => {
               <span>Field Intelligence</span>
             </button>
 
+            {/* Roadmap Curriculum Architect Button */}
+            <button
+              id="ai-roadmap-bridge-btn"
+              onClick={() => {
+                setImportModalStep(STEPS.INTENT);
+                setShowImportModal(true);
+              }}
+              className="btn-tactile-electric px-3.5 py-2 text-xs sm:text-sm font-bold flex items-center gap-2 shadow-xs cursor-pointer"
+              title="Design a custom study roadmap or import structured syllabus"
+            >
+              <Compass className="w-4 h-4 text-white" />
+              <span>Curriculum Planner</span>
+            </button>
+
             {/* Import Roadmap Button (Preserved ID for Onboarding Tests) */}
             <button
               id="import-roadmap-btn"
-              onClick={() => setShowImportModal(true)}
+              onClick={() => {
+                setImportModalStep(STEPS.INPUT);
+                setShowImportModal(true);
+              }}
               className="btn-tactile-ghost px-3.5 py-2 text-xs flex items-center gap-1.5"
               title="Import JSON roadmap"
             >
@@ -397,28 +462,28 @@ const RoadmapPage = () => {
 
         {/* ── LEVEL 1: LEARNING DESTINATION OVERVIEW ── */}
         {activeSubject && (
-          <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-electric-50/70 via-slate-50 to-coral-50/40 dark:from-electric-950/30 dark:via-slate-900/40 dark:to-coral-950/20 border-2 border-slate-200 dark:border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div className="space-y-1 max-w-2xl">
+          <div className="card-workbench p-5 rounded-2xl bg-white dark:bg-[#1C1A18] border border-stone-200 dark:border-[#2E2B27] flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="space-y-1.5 max-w-2xl">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-[10px] font-mono font-bold uppercase tracking-widest text-electric-600 dark:text-electric-400">
+                <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-copper-600 dark:text-copper-400">
                   Level 1 · Learning Destination
                 </span>
                 {activeSubject.specializations && activeSubject.specializations.length > 0 && (
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold">
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300 font-bold border border-stone-200 dark:border-stone-700">
                     {activeSubject.specializations.length} Specializations
                   </span>
                 )}
                 {topology.projects && topology.projects.length > 0 && (
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-coral-100 dark:bg-coral-950 text-coral-700 dark:text-coral-300 font-bold">
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-copper-50 dark:bg-copper-950/60 text-copper-700 dark:text-copper-300 font-bold border border-copper-200 dark:border-copper-900">
                     {topology.projects.length} Practical Projects
                   </span>
                 )}
               </div>
-              <h2 className="font-display font-black text-lg sm:text-xl text-slate-900 dark:text-white">
-                {activeSubject.learnerContext?.targetCapabilities || activeSubject.learnerContext?.goal || activeSubject.fieldIntelligence?.fieldDefinition || `Mastery of ${activeSubject.name}`}
+              <h2 className="font-display font-black text-lg sm:text-xl text-stone-900 dark:text-warmwhite">
+                {resolveSubjectHeadline(activeSubject)}
               </h2>
-              <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed line-clamp-2">
-                {activeSubject.fieldIntelligence?.currentState || `Structured progression across ${topology.regions.length} knowledge arcs and ${topology.allConcepts.length} milestones.`}
+              <p className="text-xs text-stone-600 dark:text-stone-400 leading-relaxed line-clamp-2 font-sans">
+                {resolveSubjectSubheadline(activeSubject, topology)}
               </p>
             </div>
 
@@ -426,7 +491,7 @@ const RoadmapPage = () => {
               <button
                 type="button"
                 onClick={() => setShowFieldIntel(true)}
-                className="btn-tactile-electric px-3.5 py-2 text-xs flex items-center gap-1.5 shadow-xs"
+                className="btn-workbench-mineral px-3.5 py-2 text-xs flex items-center gap-1.5 shadow-xs cursor-pointer"
               >
                 <Layers className="w-3.5 h-3.5" />
                 <span>Explore Field Intelligence</span>
@@ -535,11 +600,35 @@ const RoadmapPage = () => {
           <h2 className="font-display font-black text-2xl text-slate-900 dark:text-white">
             Your Knowledge World Awaits
           </h2>
-          <p className="text-sm font-semibold text-slate-500 leading-relaxed">
-            Mount one of our curated STEM tracks below or import your own JSON roadmap to begin exploring your capabilities.
-          </p>
+          {/* Custom Track Generator CTA */}
+          <div className="p-4 sm:p-5 rounded-2xl bg-slate-100/80 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row items-center justify-between gap-4 text-left">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 font-bold text-sm text-slate-900 dark:text-white">
+                <Compass className="w-4 h-4 text-electric-600 dark:text-electric-400" />
+                <span>Build or Import Custom Study Roadmap</span>
+              </div>
+              <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300">
+                Generate a structured, milestone-driven curriculum for any skill, craft, or engineering discipline.
+              </p>
+            </div>
+            <button
+              type="button"
+              id="empty-state-ai-bridge-btn"
+              onClick={() => {
+                setImportModalStep(STEPS.INTENT);
+                setShowImportModal(true);
+              }}
+              className="btn-tactile-electric px-4 py-2.5 text-xs sm:text-sm font-bold shrink-0 flex items-center gap-2 shadow-xs cursor-pointer"
+            >
+              <Compass className="w-4 h-4 text-white" />
+              <span>Open Roadmap Architect</span>
+            </button>
+          </div>
 
           <div className="space-y-3 pt-2 text-left">
+            <div className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              Or mount a curated foundational path:
+            </div>
             {CURATED_ROADMAPS.map((c) => (
               <div
                 key={c.id}
@@ -600,6 +689,7 @@ const RoadmapPage = () => {
       {/* ── UNIVERSAL AI ROADMAP BRIDGE MODAL (v2) ── */}
       <UniversalRoadmapBridgeModal
         isOpen={showImportModal}
+        initialStep={importModalStep}
         onClose={() => setShowImportModal(false)}
         onImport={(roadmapData, options) => {
           const success = importRoadmap(roadmapData, options);

@@ -57,7 +57,8 @@ import {
   RECOMMENDATION_TYPES
 } from '../adaptive';
 import { saveHypotheses, saveRecommendations } from '../adaptive/adaptiveStorage';
-import { loadIdentity } from '../utils/identityRealityResolver';
+import { loadIdentity, saveIdentity } from '../utils/identityRealityResolver';
+import { updateTrajectoryDestination } from '../utils/trajectoryResolver';
 import {
   enqueueMutation,
   executeSyncCycle,
@@ -87,6 +88,15 @@ import {
   signOutUser,
   AUTH_LIFECYCLE_STATES
 } from '../services/authService';
+import {
+  getSavedWallpaper,
+  getSavedPalette,
+  extractDominantColorsFromImage,
+  applyThemeVariables,
+  WALLPAPER_STORAGE_KEY,
+  PALETTE_STORAGE_KEY,
+  CURATED_WALLPAPERS
+} from '../utils/wallpaperManager';
 
 export const RoadmapContext = createContext();
 
@@ -95,7 +105,10 @@ const DEFAULT_SETTINGS = {
   dailyLearningHours: 2,
   pomodoroWorkDuration: 25,
   pomodoroBreakDuration: 5,
-  pomodoroLongBreakDuration: 15
+  pomodoroLongBreakDuration: 15,
+  revisionIntervalDays: 10,
+  revisionOverrides: {},
+  revisionHistory: {}
 };
 
 const SETTINGS_STORAGE_KEY = 'learningTracker_settings';
@@ -122,6 +135,11 @@ const migrateSettings = (stored) => {
     stored.pomodoroLongBreak ??
     DEFAULT_SETTINGS.pomodoroLongBreakDuration;
 
+  const revisionInterval =
+    typeof stored.revisionIntervalDays === 'number' && stored.revisionIntervalDays >= 1
+      ? Math.floor(stored.revisionIntervalDays)
+      : DEFAULT_SETTINGS.revisionIntervalDays;
+
   return {
     ...DEFAULT_SETTINGS,
     ...stored,
@@ -130,7 +148,10 @@ const migrateSettings = (stored) => {
     pomodoroBreakDuration: shortBreak,
     pomodoroShortBreak: shortBreak,
     pomodoroLongBreakDuration: longBreak,
-    pomodoroLongBreak: longBreak
+    pomodoroLongBreak: longBreak,
+    revisionIntervalDays: revisionInterval,
+    revisionOverrides: stored.revisionOverrides || {},
+    revisionHistory: stored.revisionHistory || {}
   };
 };
 
@@ -449,9 +470,9 @@ export const RoadmapProvider = ({ children, initialSubjects }) => {
     return record;
   };
 
-  // Theme state with persistence
+  // Theme state with persistence (defaulting to obsidian smoky glass dark foundation)
   const [isDarkMode, setIsDarkMode] = useState(() => {
-    const savedTheme = safeStorageGet('theme', 'light');
+    const savedTheme = safeStorageGet('theme', 'dark');
     return savedTheme === 'dark';
   });
 
@@ -470,6 +491,50 @@ export const RoadmapProvider = ({ children, initialSubjects }) => {
     setIsDarkMode(prev => !prev);
   };
 
+  // Wallpaper & Adaptive Theme Color Palette State
+  const [wallpaper, setWallpaperState] = useState(() => getSavedWallpaper());
+  const [palette, setPaletteState] = useState(() => getSavedPalette());
+  const [isWallpaperModalOpen, setIsWallpaperModalOpen] = useState(false);
+
+  useEffect(() => {
+    applyThemeVariables(palette);
+  }, [palette]);
+
+  const setCustomWallpaper = useCallback(async (imageSrc, precomputedPalette = null) => {
+    try {
+      setWallpaperState(imageSrc);
+      try {
+        localStorage.setItem(WALLPAPER_STORAGE_KEY, imageSrc);
+      } catch (e) {
+        console.warn('Could not persist wallpaper to localStorage:', e);
+      }
+
+      let newPalette = precomputedPalette;
+      if (!newPalette) {
+        newPalette = await extractDominantColorsFromImage(imageSrc);
+      }
+      setPaletteState(newPalette);
+      applyThemeVariables(newPalette);
+      try {
+        localStorage.setItem(PALETTE_STORAGE_KEY, JSON.stringify(newPalette));
+      } catch (e) {}
+    } catch (err) {
+      console.error('Error applying custom wallpaper:', err);
+    }
+  }, []);
+
+  const resetWallpaper = useCallback(() => {
+    const defaultWp = CURATED_WALLPAPERS[0].url;
+    const defaultPalette = CURATED_WALLPAPERS[0].palette;
+    setWallpaperState(defaultWp);
+    setPaletteState(defaultPalette);
+    applyThemeVariables(defaultPalette);
+    try {
+      localStorage.removeItem(WALLPAPER_STORAGE_KEY);
+      localStorage.removeItem(PALETTE_STORAGE_KEY);
+    } catch (e) {}
+  }, []);
+
   // Tutorial and roadmap import status
   const [showTutorial, setShowTutorial] = useState(() => {
     const hasRoadmapData = Array.isArray(subjects) && subjects.length > 0;
@@ -483,6 +548,16 @@ export const RoadmapProvider = ({ children, initialSubjects }) => {
   });
 
   const [selectedSubjectId, setSelectedSubjectId] = useState(null);
+
+  // Keep selectedSubjectId valid if subjects list changes
+  useEffect(() => {
+    if (selectedSubjectId && subjects && subjects.length > 0) {
+      const exists = subjects.some(s => s.id === selectedSubjectId);
+      if (!exists) {
+        setSelectedSubjectId(null);
+      }
+    }
+  }, [selectedSubjectId, subjects]);
 
   // Global Canonical Learning Context (Unification Pass #12 & #13)
   const [currentLearningContext, setCurrentLearningContext] = useState(() => {
@@ -2184,8 +2259,9 @@ export const RoadmapProvider = ({ children, initialSubjects }) => {
 
     const hasValidStructure = rawSubjects.every(subject => {
       if (!subject || typeof subject !== 'object') return false;
-      const name = subject.name || subject.title;
+      const name = subject.name || subject.title || subject.subjectName || subject.learnerContext?.primaryLearningGoal || subject.learnerContext?.targetDestination || subject.goal;
       if (!name || typeof name !== 'string') return false;
+      if (!subject.name) subject.name = name;
       const phases = subject.phases || subject.learningArcs;
       if (!phases || !Array.isArray(phases)) return false;
 
@@ -2198,8 +2274,9 @@ export const RoadmapProvider = ({ children, initialSubjects }) => {
 
         return tasks.every(task => {
           if (!task || typeof task !== 'object') return false;
-          const taskName = task.name || task.title;
+          const taskName = task.name || task.title || task.topic || task.task;
           if (!taskName || typeof taskName !== 'string') return false;
+          if (!task.name) task.name = taskName;
           const subtasks = task.subtasks || task.steps || task.items || [];
           return Array.isArray(subtasks) && subtasks.length >= 0;
         });
@@ -2233,7 +2310,12 @@ export const RoadmapProvider = ({ children, initialSubjects }) => {
         const rawJson = safeJsonParse(jsonData);
         if (rawJson) {
           const sanitized = sanitizeUntrustedObject(rawJson);
-          if (Array.isArray(sanitized)) {
+          if (sanitized && (sanitized.schemaVersion || sanitized.learningArcs || sanitized.fieldIntelligence || sanitized.learnerContext)) {
+            const report = normalizeRoadmapInput(sanitized);
+            if (report.canImportDirectly && report.canonicalRoadmap.length > 0) {
+              normalizedData = normalizeRoadmap(report.canonicalRoadmap);
+            }
+          } else if (Array.isArray(sanitized)) {
             normalizedData = normalizeRoadmap(sanitized);
           } else if (sanitized && Array.isArray(sanitized.canonicalRoadmap)) {
             normalizedData = normalizeRoadmap(sanitized.canonicalRoadmap);
@@ -2255,7 +2337,12 @@ export const RoadmapProvider = ({ children, initialSubjects }) => {
         }
       } else if (typeof jsonData === 'object' && jsonData !== null) {
         const sanitized = sanitizeUntrustedObject(jsonData);
-        if (Array.isArray(sanitized)) {
+        if (sanitized && (sanitized.schemaVersion || sanitized.learningArcs || sanitized.fieldIntelligence || sanitized.learnerContext)) {
+          const report = normalizeRoadmapInput(sanitized);
+          if (report.canImportDirectly && report.canonicalRoadmap.length > 0) {
+            normalizedData = normalizeRoadmap(report.canonicalRoadmap);
+          }
+        } else if (Array.isArray(sanitized)) {
           normalizedData = normalizeRoadmap(sanitized);
         } else if (sanitized && Array.isArray(sanitized.canonicalRoadmap)) {
           normalizedData = normalizeRoadmap(sanitized.canonicalRoadmap);
@@ -2305,6 +2392,58 @@ export const RoadmapProvider = ({ children, initialSubjects }) => {
 
         if (newSubjects[0]?.id) {
           setSelectedSubjectId(newSubjects[0].id);
+          setCurrentLearningContext(null);
+        }
+      }
+
+      // Sync destination & identity with imported subject if available
+      const primaryImported = normalizedData[0];
+      if (primaryImported) {
+        const importedGoal =
+          primaryImported.learnerContext?.primaryLearningGoal ||
+          primaryImported.learnerContext?.goal ||
+          primaryImported.name;
+        const importedRole =
+          primaryImported.learnerContext?.targetDestination ||
+          primaryImported.learnerContext?.destination ||
+          `${importedGoal} Practitioner`;
+
+        if (importedGoal && importedGoal !== 'Custom Learning Track' && importedGoal !== 'Imported Learning Pathway') {
+          try {
+            const currentIdentity = loadIdentity();
+            const currentDest = currentIdentity?.destination || {};
+            // Preserve master primary goal if already established
+            const masterGoal = currentDest.masterPrimaryGoal ||
+              (currentDest.primaryGoal && !['magician', 'creative human'].includes(currentDest.primaryGoal.toLowerCase()) ? currentDest.primaryGoal : null) ||
+              'Embedded Systems Internship';
+
+            saveIdentity({
+              ...currentIdentity,
+              destination: {
+                ...currentDest,
+                primaryGoal: importedGoal,
+                targetRole: importedRole,
+                masterPrimaryGoal: masterGoal,
+                currentGoal: importedGoal,
+                currentRole: importedRole,
+                activeTrajectoryId: 'current',
+                statement: currentDest.statement || `Synthesizing capabilities across active tracks and ${importedGoal}.`
+              }
+            });
+
+            updateTrajectoryDestination({
+              activeTrajectoryId: 'current',
+              primaryGoal: importedGoal,
+              targetRole: importedRole,
+              primaryRole: importedRole,
+              role: importedRole,
+              statement: `Develop deep, demonstrable capability in ${importedGoal}.`,
+              mode: 'career',
+              subjectId: primaryImported.id
+            });
+          } catch (e) {
+            // Silently handle if in test runner without storage/window
+          }
         }
       }
 
@@ -2325,6 +2464,9 @@ export const RoadmapProvider = ({ children, initialSubjects }) => {
     setLearningPlan(prev => prev.filter(task => task.subjectId !== subjectId));
     if (currentLearningContext?.subjectId === subjectId) {
       setCurrentLearningContext(null);
+    }
+    if (selectedSubjectId === subjectId) {
+      setSelectedSubjectId(null);
     }
   };
 
@@ -2391,9 +2533,11 @@ export const RoadmapProvider = ({ children, initialSubjects }) => {
   // ============================================================
   // CANONICAL FOCUS SESSION MANAGEMENT
   // ============================================================
-  const startFocusSession = (taskToLaunch, durationMinutes = 25) => {
+  const startFocusSession = (taskToLaunch, durationMinutes = undefined) => {
     if (!taskToLaunch) return;
-    const mins = Number(durationMinutes || taskToLaunch.time || 25);
+    const identityMins = loadIdentity()?.timeReality?.weekdayMinutes;
+    const configuredMins = identityMins || settings?.pomodoroWorkDuration || 25;
+    const mins = Number(durationMinutes || taskToLaunch.time || configuredMins);
     const sessionId = taskToLaunch.sessionId || `session-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
     const sessionObj = {
       sessionId,
@@ -2404,7 +2548,11 @@ export const RoadmapProvider = ({ children, initialSubjects }) => {
       timeLeftSeconds: mins * 60,
       sessionStartTime: null,
       sessionEndTime: null,
-      elapsedMs: 0
+      elapsedMs: 0,
+      pomodoroCycle: 1,
+      completedCycles: 0,
+      breakDurationMinutes: settings?.pomodoroBreakDuration || 5,
+      isBreak: false
     };
     setFocusSession(sessionObj);
     notifyFocusStarted(sessionObj);
@@ -2420,6 +2568,7 @@ export const RoadmapProvider = ({ children, initialSubjects }) => {
       return {
         ...prev,
         status: 'running',
+        isBreak: false,
         initialStartTime: prev.initialStartTime || now,
         sessionStartTime: now,
         sessionEndTime: now + secs * 1000
@@ -2429,21 +2578,22 @@ export const RoadmapProvider = ({ children, initialSubjects }) => {
 
   const pauseFocusSession = () => {
     setFocusSession(prev => {
-      if (!prev || prev.status !== 'running') return prev;
+      if (!prev || (prev.status !== 'running' && prev.status !== 'break')) return prev;
+      const isBreak = prev.status === 'break';
       const remainingSecs = prev.sessionEndTime
         ? Math.max(0, Math.ceil((prev.sessionEndTime - Date.now()) / 1000))
-        : (typeof prev.timeLeftSeconds === 'number' ? prev.timeLeftSeconds : prev.targetMinutes * 60);
+        : (typeof prev.timeLeftSeconds === 'number' ? prev.timeLeftSeconds : (isBreak ? (prev.breakDurationMinutes || 5) * 60 : prev.targetMinutes * 60));
       const maxRemainingMs = prev.sessionStartTime && prev.sessionEndTime
         ? Math.max(0, prev.sessionEndTime - prev.sessionStartTime)
         : (typeof prev.timeLeftSeconds === 'number' ? prev.timeLeftSeconds : prev.targetMinutes * 60) * 1000;
-      const additionalElapsed = prev.sessionStartTime
+      const additionalElapsed = (!isBreak && prev.sessionStartTime)
         ? Math.min(Date.now() - prev.sessionStartTime, maxRemainingMs)
         : 0;
       const maxTotalMs = (prev.targetMinutes || 25) * 60 * 1000;
-      const newElapsedMs = Math.min(maxTotalMs, (prev.elapsedMs || 0) + additionalElapsed);
+      const newElapsedMs = isBreak ? (prev.elapsedMs || 0) : Math.min(maxTotalMs, (prev.elapsedMs || 0) + additionalElapsed);
       return {
         ...prev,
-        status: 'paused',
+        status: isBreak ? 'break-paused' : 'paused',
         timeLeftSeconds: remainingSecs,
         sessionStartTime: null,
         sessionEndTime: null,
@@ -2454,15 +2604,83 @@ export const RoadmapProvider = ({ children, initialSubjects }) => {
 
   const resumeFocusSession = () => {
     setFocusSession(prev => {
-      if (!prev || prev.status !== 'paused') return prev;
+      if (!prev || (prev.status !== 'paused' && prev.status !== 'break-paused')) return prev;
+      const isBreak = prev.status === 'break-paused';
       const secs = typeof prev.timeLeftSeconds === 'number' && prev.timeLeftSeconds > 0
         ? prev.timeLeftSeconds
-        : prev.targetMinutes * 60;
+        : (isBreak ? (prev.breakDurationMinutes || 5) * 60 : prev.targetMinutes * 60);
+      return {
+        ...prev,
+        status: isBreak ? 'break' : 'running',
+        sessionStartTime: Date.now(),
+        sessionEndTime: Date.now() + secs * 1000
+      };
+    });
+  };
+
+  const extendFocusSession = (additionalMinutes = 5) => {
+    const addMins = Number(additionalMinutes) || 5;
+    const addSecs = addMins * 60;
+    setFocusSession(prev => {
+      if (!prev) return prev;
+      const newTargetMinutes = (prev.targetMinutes || 25) + addMins;
+      const currentRemaining = prev.sessionEndTime
+        ? Math.max(0, Math.ceil((prev.sessionEndTime - Date.now()) / 1000))
+        : (typeof prev.timeLeftSeconds === 'number' ? prev.timeLeftSeconds : prev.targetMinutes * 60);
+      const newTimeLeft = currentRemaining + addSecs;
+      const newEndTime = prev.sessionEndTime ? prev.sessionEndTime + (addSecs * 1000) : null;
+      return {
+        ...prev,
+        targetMinutes: newTargetMinutes,
+        timeLeftSeconds: newTimeLeft,
+        sessionEndTime: newEndTime
+      };
+    });
+  };
+
+  const startFocusBreak = (breakMinutes = null) => {
+    setFocusSession(prev => {
+      if (!prev) return prev;
+      const maxRemainingMs = prev.sessionStartTime && prev.sessionEndTime
+        ? Math.max(0, prev.sessionEndTime - prev.sessionStartTime)
+        : (typeof prev.timeLeftSeconds === 'number' ? prev.timeLeftSeconds : prev.targetMinutes * 60) * 1000;
+      const additionalElapsed = (prev.status === 'running' && prev.sessionStartTime)
+        ? Math.min(Date.now() - prev.sessionStartTime, maxRemainingMs)
+        : 0;
+      const newElapsedMs = (prev.elapsedMs || 0) + additionalElapsed;
+
+      const resolvedBreakMins = Number(breakMinutes || prev.breakDurationMinutes || settings?.pomodoroBreakDuration || 5);
+      const now = Date.now();
+      return {
+        ...prev,
+        status: 'break',
+        isBreak: true,
+        sessionStartTime: now,
+        sessionEndTime: now + (resolvedBreakMins * 60 * 1000),
+        timeLeftSeconds: resolvedBreakMins * 60,
+        elapsedMs: newElapsedMs,
+        breakDurationMinutes: resolvedBreakMins,
+        completedCycles: (prev.completedCycles || 0) + 1
+      };
+    });
+  };
+
+  const resumeFocusFromBreak = (workMinutes = null) => {
+    setFocusSession(prev => {
+      if (!prev) return prev;
+      const identityMins = loadIdentity()?.timeReality?.weekdayMinutes;
+      const nextWorkMins = Number(workMinutes || settings?.pomodoroWorkDuration || identityMins || 25);
+      const now = Date.now();
+      const nextCycle = (prev.pomodoroCycle || 1) + 1;
       return {
         ...prev,
         status: 'running',
-        sessionStartTime: Date.now(),
-        sessionEndTime: Date.now() + secs * 1000
+        isBreak: false,
+        pomodoroCycle: nextCycle,
+        targetMinutes: (prev.targetMinutes || 0) + nextWorkMins,
+        sessionStartTime: now,
+        sessionEndTime: now + (nextWorkMins * 60 * 1000),
+        timeLeftSeconds: nextWorkMins * 60
       };
     });
   };
@@ -2924,6 +3142,9 @@ export const RoadmapProvider = ({ children, initialSubjects }) => {
         openReflectionSession,
         commitFocusSession,
         abandonFocusSession,
+        extendFocusSession,
+        startFocusBreak,
+        resumeFocusFromBreak,
         reconcileSessionTelemetry,
         reconcileSessionTelemetryFromServer,
 
@@ -2969,6 +3190,14 @@ export const RoadmapProvider = ({ children, initialSubjects }) => {
         // Theme helpers
         isDarkMode,
         toggleTheme,
+
+        // Wallpaper & Adaptive Palette
+        wallpaper,
+        palette,
+        setCustomWallpaper,
+        resetWallpaper,
+        isWallpaperModalOpen,
+        setIsWallpaperModalOpen,
 
         // Tutorial helpers
         showTutorial,

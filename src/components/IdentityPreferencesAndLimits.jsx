@@ -13,7 +13,7 @@
  */
 
 import React from 'react';
-import { Sparkles, AlertOctagon, MapPin, Sliders, Volume2 } from 'lucide-react';
+import { AlertOctagon, MapPin, Sliders, Volume2 } from 'lucide-react';
 
 const START_TRIGGER_PRESETS = [
   'A concrete problem to solve',
@@ -90,12 +90,12 @@ const IdentityPreferencesAndLimits = ({
 
       {/* Section Header */}
       <div className="flex items-center gap-2.5">
-        <div className="w-8 h-8 rounded-xl bg-violet-500/10 text-violet-600 dark:text-violet-400 flex items-center justify-center font-bold">
-          <Sparkles className="w-4 h-4" />
+        <div className="w-8 h-8 rounded-xl bg-electric-500/10 text-electric-600 dark:text-electric-400 flex items-center justify-center font-bold">
+          <Sliders className="w-4 h-4" />
         </div>
         <div>
-          <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400 block">
-            Section 04 · Reality Constraints & Preferences
+          <span className="text-xs font-sans font-medium text-slate-500 dark:text-slate-400 block">
+            Learning Preferences & Constraints
           </span>
           <h2 className="font-display font-black text-xl text-slate-900 dark:text-white tracking-tight">
             What gets in the way, and what helps you start?
@@ -107,7 +107,7 @@ const IdentityPreferencesAndLimits = ({
       <div className="space-y-3">
         <div className="flex items-center gap-2">
           <Sliders className="w-3.5 h-3.5 text-emerald-500" />
-          <span className="text-xs font-mono font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+          <span className="text-xs font-sans font-medium text-slate-700 dark:text-slate-300">
             What helps you overcome friction to start?
           </span>
         </div>
@@ -142,7 +142,7 @@ const IdentityPreferencesAndLimits = ({
       <div className="space-y-3 pt-4 border-t border-slate-100 dark:border-slate-800">
         <div className="flex items-center gap-2">
           <AlertOctagon className="w-3.5 h-3.5 text-coral-500" />
-          <span className="text-xs font-mono font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+          <span className="text-xs font-sans font-medium text-slate-700 dark:text-slate-300">
             What usually limits you? (Resource Constraints)
           </span>
         </div>
@@ -168,7 +168,7 @@ const IdentityPreferencesAndLimits = ({
           })}
         </div>
 
-        <span className="text-[10px] font-mono text-slate-400 block">
+        <span className="text-xs font-sans text-slate-500 dark:text-slate-400 block leading-relaxed">
           Used to produce realistic routes and gentle recovery adjustments when life gets busy.
         </span>
       </div>
@@ -179,7 +179,7 @@ const IdentityPreferencesAndLimits = ({
 
           {/* Location */}
           <div className="space-y-2">
-            <div className="flex items-center gap-1.5 text-xs font-mono font-bold text-slate-700 dark:text-slate-300">
+            <div className="flex items-center gap-1.5 text-xs font-sans font-medium text-slate-700 dark:text-slate-300">
               <MapPin className="w-3.5 h-3.5 text-electric-500" />
               <span>Primary Workspace:</span>
             </div>
@@ -196,7 +196,7 @@ const IdentityPreferencesAndLimits = ({
 
           {/* Sound / Interruption Level */}
           <div className="space-y-2">
-            <div className="flex items-center gap-1.5 text-xs font-mono font-bold text-slate-700 dark:text-slate-300">
+            <div className="flex items-center gap-1.5 text-xs font-sans font-medium text-slate-700 dark:text-slate-300">
               <Volume2 className="w-3.5 h-3.5 text-amber-500" />
               <span>Interruption / Soundscape:</span>
             </div>
@@ -216,7 +216,7 @@ const IdentityPreferencesAndLimits = ({
 
       {/* ── 4. LIGHTWEIGHT LEARNING PREFERENCES ── */}
       <div className="space-y-3 pt-4 border-t border-slate-100 dark:border-slate-800">
-        <span className="text-xs font-mono font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 block">
+        <span className="text-xs font-sans font-medium text-slate-700 dark:text-slate-300 block">
           Pedagogical Sequencing Preferences:
         </span>
 
@@ -224,7 +224,7 @@ const IdentityPreferencesAndLimits = ({
 
           {/* Concrete vs Abstract */}
           <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 space-y-2">
-            <span className="text-[10px] text-slate-400 block font-bold uppercase">Theory Progression:</span>
+            <span className="text-xs font-sans font-medium text-slate-600 dark:text-slate-300 block mb-1">Theory Progression</span>
             <div className="grid grid-cols-2 gap-1.5">
               <button
                 type="button"
@@ -253,7 +253,7 @@ const IdentityPreferencesAndLimits = ({
 
           {/* Build vs Understand */}
           <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 space-y-2">
-            <span className="text-[10px] text-slate-400 block font-bold uppercase">Execution Instinct:</span>
+            <span className="text-xs font-sans font-medium text-slate-600 dark:text-slate-300 block mb-1">Execution Instinct</span>
             <div className="grid grid-cols-2 gap-1.5">
               <button
                 type="button"
@@ -282,7 +282,7 @@ const IdentityPreferencesAndLimits = ({
 
           {/* Session Duration Bias */}
           <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 space-y-2">
-            <span className="text-[10px] text-slate-400 block font-bold uppercase">Session Cadence:</span>
+            <span className="text-xs font-sans font-medium text-slate-600 dark:text-slate-300 block mb-1">Session Cadence</span>
             <div className="grid grid-cols-2 gap-1.5">
               <button
                 type="button"

@@ -45,8 +45,8 @@ const IdentityTimeReality = ({
             <Clock className="w-4 h-4" />
           </div>
           <div>
-            <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400 block">
-              Section 03 · Time Reality
+            <span className="text-xs font-sans font-medium text-slate-500 dark:text-slate-400 block">
+              Time Commitment & Daily Rhythm
             </span>
             <h2 className="font-display font-black text-xl text-slate-900 dark:text-white tracking-tight">
               What time do you realistically have?
@@ -71,7 +71,7 @@ const IdentityTimeReality = ({
         {/* 1. Weekday Allocation */}
         <div className="p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-3">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-mono font-bold uppercase text-slate-700 dark:text-slate-300">
+            <span className="text-xs font-sans font-medium text-slate-700 dark:text-slate-300">
               Monday – Friday
             </span>
             <span className="text-xs font-mono font-black text-emerald-600 dark:text-emerald-400">
@@ -107,7 +107,7 @@ const IdentityTimeReality = ({
             className="w-full accent-emerald-500 cursor-pointer"
           />
 
-          <span className="text-[10px] font-mono text-slate-600 dark:text-slate-300 block">
+          <span className="text-xs font-sans text-slate-500 dark:text-slate-400 block leading-relaxed">
             Feeds directly into daily challenge sizing in Now & Path.
           </span>
         </div>
@@ -115,7 +115,7 @@ const IdentityTimeReality = ({
         {/* 2. Saturday Allocation */}
         <div className="p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-3">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-mono font-bold uppercase text-slate-700 dark:text-slate-300">
+            <span className="text-xs font-sans font-medium text-slate-700 dark:text-slate-300">
               Saturday
             </span>
             <span className="text-xs font-mono font-black text-electric-600 dark:text-electric-400">
@@ -140,7 +140,7 @@ const IdentityTimeReality = ({
             ))}
           </div>
 
-          <span className="text-[10px] font-mono text-slate-600 dark:text-slate-300 block pt-4">
+          <span className="text-xs font-sans text-slate-500 dark:text-slate-400 block leading-relaxed pt-3">
             Ideal for deeper project builds, lab work, or circuit assembly.
           </span>
         </div>
@@ -148,7 +148,7 @@ const IdentityTimeReality = ({
         {/* 3. Sunday Allocation */}
         <div className="p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-3">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-mono font-bold uppercase text-slate-700 dark:text-slate-300">
+            <span className="text-xs font-sans font-medium text-slate-700 dark:text-slate-300">
               Sunday
             </span>
             <span className="text-xs font-mono font-black text-amber-600 dark:text-amber-400">
@@ -173,7 +173,7 @@ const IdentityTimeReality = ({
             ))}
           </div>
 
-          <span className="text-[10px] font-mono text-slate-600 dark:text-slate-300 block pt-4">
+          <span className="text-xs font-sans text-slate-500 dark:text-slate-400 block leading-relaxed pt-3">
             Used for conceptual review, synthesis, and route preview.
           </span>
         </div>

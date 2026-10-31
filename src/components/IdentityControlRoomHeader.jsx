@@ -7,7 +7,7 @@
  */
 
 import React from 'react';
-import { Compass, Cpu, Clock, ShieldCheck, Sparkles } from 'lucide-react';
+import { Compass, Cpu, Clock, ShieldCheck, Sliders } from 'lucide-react';
 
 const IdentityControlRoomHeader = ({
   identity,
@@ -22,7 +22,7 @@ const IdentityControlRoomHeader = ({
     { id: 'destination', label: 'Destination', icon: Compass },
     { id: 'resources', label: 'What I Have', icon: Cpu },
     { id: 'time', label: 'Time Reality', icon: Clock },
-    { id: 'limits', label: 'Limits & Context', icon: Sparkles },
+    { id: 'limits', label: 'Limits & Context', icon: Sliders },
     { id: 'knowledge', label: 'System Knowledge', icon: ShieldCheck },
     { id: 'system', label: 'System & Privacy', icon: ShieldCheck }
   ];
@@ -41,8 +41,8 @@ const IdentityControlRoomHeader = ({
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
               YOUR WORLD
             </span>
-            <span className="text-xs font-mono font-bold text-slate-400">
-              · Control Room & Reality Engine
+            <span className="text-xs font-sans font-medium text-slate-500 dark:text-slate-400">
+              Personal Learning & Reality Engine
             </span>
           </div>
 

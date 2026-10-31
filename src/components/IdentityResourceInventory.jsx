@@ -125,8 +125,8 @@ const IdentityResourceInventory = ({
             <Cpu className="w-4 h-4" />
           </div>
           <div>
-            <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400 block">
-              Section 02 · Reality Inventory
+            <span className="text-xs font-sans font-medium text-slate-500 dark:text-slate-400 block">
+              Available Tools & Hardware Setup
             </span>
             <h2 className="font-display font-black text-xl text-slate-900 dark:text-white tracking-tight">
               What do you actually have?
@@ -151,10 +151,10 @@ const IdentityResourceInventory = ({
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="text-xs font-mono font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+            <span className="text-xs font-sans font-medium text-slate-700 dark:text-slate-300">
               Hardware & Equipment:
             </span>
-            <span className="text-xs font-mono text-slate-400">
+            <span className="text-xs font-sans text-slate-500 dark:text-slate-400">
               ({hardware.length} selected)
             </span>
           </div>
@@ -242,7 +242,7 @@ const IdentityResourceInventory = ({
       <div className="space-y-3 pt-4 border-t border-slate-100 dark:border-slate-800">
         <div className="flex items-center gap-2">
           <Code className="w-3.5 h-3.5 text-electric-500" />
-          <span className="text-xs font-mono font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+          <span className="text-xs font-sans font-medium text-slate-700 dark:text-slate-300">
             Software Environments Installed:
           </span>
         </div>
@@ -273,7 +273,7 @@ const IdentityResourceInventory = ({
       <div className="space-y-3 pt-4 border-t border-slate-100 dark:border-slate-800">
         <div className="flex items-center gap-2">
           <Building className="w-3.5 h-3.5 text-violet-500" />
-          <span className="text-xs font-mono font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+          <span className="text-xs font-sans font-medium text-slate-700 dark:text-slate-300">
             Physical Access & Bench Availability:
           </span>
         </div>
@@ -308,7 +308,7 @@ const IdentityResourceInventory = ({
       <div className="space-y-3 pt-4 border-t border-slate-100 dark:border-slate-800">
         <div className="flex items-center gap-2">
           <Wifi className="w-3.5 h-3.5 text-emerald-500" />
-          <span className="text-xs font-mono font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+          <span className="text-xs font-sans font-medium text-slate-700 dark:text-slate-300">
             Internet Connectivity Reality:
           </span>
         </div>
@@ -327,11 +327,11 @@ const IdentityResourceInventory = ({
                     : 'bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:border-slate-300'
                 }`}
               >
-                <div className="flex items-center justify-between text-xs font-mono">
+                <div className="flex items-center justify-between text-xs font-sans font-medium">
                   <span>{opt.label}</span>
                   {isSelected && <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />}
                 </div>
-                <div className="text-[11px] font-sans text-slate-500 dark:text-slate-400 mt-0.5">
+                <div className="text-xs font-sans text-slate-500 dark:text-slate-400 mt-0.5">
                   {opt.note}
                 </div>
               </button>

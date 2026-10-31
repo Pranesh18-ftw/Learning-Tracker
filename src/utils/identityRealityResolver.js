@@ -343,7 +343,7 @@ export function resolveSystemKnowledge(identity, sessions = [], roadmap = []) {
 }
 
 /**
- * Synchronizes identity time reality to roadmap daily learning hours
+ * Synchronizes identity time reality to roadmap daily learning hours and pomodoro timing
  */
 export function syncIdentityToSettings(identity, currentSettings, updateSettings) {
   if (!updateSettings || typeof updateSettings !== 'function') return;
@@ -351,11 +351,12 @@ export function syncIdentityToSettings(identity, currentSettings, updateSettings
   const weekdayMins = identity?.timeReality?.weekdayMinutes || 35;
   const hoursEquivalent = Number((weekdayMins / 60).toFixed(1));
 
-  if (currentSettings && currentSettings.dailyLearningHours !== hoursEquivalent) {
+  if (currentSettings && (currentSettings.dailyLearningHours !== hoursEquivalent || currentSettings.pomodoroWorkDuration !== weekdayMins)) {
     updateSettings({
       ...currentSettings,
       dailyLearningHours: hoursEquivalent,
-      dailyGoalHours: hoursEquivalent
+      dailyGoalHours: hoursEquivalent,
+      pomodoroWorkDuration: weekdayMins
     });
   }
 }

@@ -31,26 +31,45 @@ const TrajectoryPage = () => {
   const {
     subjects = [],
     roadmap = [],
-    sessions = []
+    sessions = [],
+    selectedSubjectId = null,
+    setSelectedSubjectId
   } = useRoadmap();
-
-  const [destination, setDestination] = useState(() => resolveTrajectoryDestination());
-  const [selectedCapability, setSelectedCapability] = useState(null);
 
   // Active roadmap selection
   const currentRoadmap = useMemo(() => {
     return (subjects && subjects.length > 0) ? subjects : roadmap;
   }, [subjects, roadmap]);
 
-  // Resolve dynamic capability map & next action
+  // Synchronize destination based on active subject and identity
+  const initialDestination = useMemo(() => {
+    return resolveTrajectoryDestination(currentRoadmap, selectedSubjectId);
+  }, [currentRoadmap, selectedSubjectId]);
+
+  const [destination, setDestination] = useState(initialDestination);
+  const [selectedCapability, setSelectedCapability] = useState(null);
+
+  // Keep destination in sync when subjects or selectedSubjectId change in Topbar
+  React.useEffect(() => {
+    setDestination(initialDestination);
+  }, [initialDestination]);
+
+  // Resolve dynamic capability map & next action (covers all in unified mode)
   const capabilityData = useMemo(() => {
-    return resolveCapabilityMap(currentRoadmap, sessions, destination);
-  }, [currentRoadmap, sessions, destination]);
+    return resolveCapabilityMap(currentRoadmap, sessions, destination, selectedSubjectId);
+  }, [currentRoadmap, sessions, destination, selectedSubjectId]);
 
   const handleUpdateDestination = (updates) => {
-    const next = { ...destination, ...updates };
-    setDestination(next);
+    if (updates.activeTrajectoryId === 'unified') {
+      if (setSelectedSubjectId) setSelectedSubjectId(null);
+    } else if (updates.activeTrajectoryId?.startsWith('track-')) {
+      const targetSubjId = updates.activeTrajectoryId.replace('track-', '');
+      if (setSelectedSubjectId) setSelectedSubjectId(targetSubjId);
+    }
+
     updateTrajectoryDestination(updates);
+    const refreshed = resolveTrajectoryDestination(currentRoadmap, selectedSubjectId);
+    setDestination(refreshed);
   };
 
   const isCareerMode = destination.mode === 'career' || !destination.mode;
@@ -70,7 +89,7 @@ const TrajectoryPage = () => {
         </p>
         <button
           onClick={() => handleUpdateDestination({ primaryRole: 'Embedded Systems Internship', mode: 'career' })}
-          className="btn-tactile-coral px-6 py-2.5 text-xs font-mono font-bold"
+          className="btn-tactile-coral px-6 py-2.5 text-xs font-sans font-bold tracking-normal"
         >
           Select Target Trajectory
         </button>
@@ -85,6 +104,7 @@ const TrajectoryPage = () => {
       <TrajectoryDestinationHero
         destination={destination}
         metrics={capabilityData.metrics}
+        roadmap={currentRoadmap}
         onUpdateDestination={handleUpdateDestination}
       />
 
@@ -92,6 +112,8 @@ const TrajectoryPage = () => {
       <TrajectoryDevelopingGaps
         developingAreas={capabilityData.developingAreas}
         nextAction={capabilityData.nextAction}
+        recommendedActions={capabilityData.recommendedActions}
+        activeDomainName={destination.primaryRole || destination.targetRole}
         onSelectCapability={(cap) => setSelectedCapability(cap)}
       />
 

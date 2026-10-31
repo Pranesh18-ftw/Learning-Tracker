@@ -2,6 +2,7 @@ import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { RoadmapProvider, useRoadmap } from '../context/RoadmapContext';
 import { safeStorageSet, safeStorageGet } from '../utils/storage';
+import { saveIdentity, loadIdentity, syncIdentityToSettings } from '../utils/identityRealityResolver';
 import FocusSpace from '../components/FocusSpace';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -370,4 +371,196 @@ describe('P1.5 — Focus / Pomodoro Lifecycle, Timer, Visibility, and Session-Re
       })
     );
   });
+
+  test('9. Identity Time Reality synchronization propagates to settings and focus sessions', () => {
+    // 1. User updates weekdayMinutes in Identity
+    saveIdentity({
+      timeReality: {
+        weekdayMinutes: 40,
+        saturdayHours: 2,
+        sundayHours: 1
+      }
+    });
+
+    const mockSettings = { dailyLearningHours: 1, pomodoroWorkDuration: 25 };
+    const updateSettingsFn = jest.fn();
+
+    // 2. syncIdentityToSettings propagates to pomodoroWorkDuration
+    syncIdentityToSettings(loadIdentity(), mockSettings, updateSettingsFn);
+    expect(updateSettingsFn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        pomodoroWorkDuration: 40,
+        dailyLearningHours: 0.7
+      })
+    );
+
+    mountContext();
+
+    // 3. startFocusSession without duration argument respects Identity weekdayMinutes
+    act(() => {
+      capturedContext.startFocusSession({ ...sampleTask, time: undefined });
+    });
+
+    expect(capturedContext.focusSession.targetMinutes).toBe(40);
+    expect(capturedContext.focusSession.timeLeftSeconds).toBe(2400);
+  });
+
+  test('10. Adding time on-the-fly (extendFocusSession) extends active task duration without state loss', () => {
+    mountContext();
+
+    act(() => {
+      capturedContext.startFocusSession(sampleTask, 25);
+    });
+
+    const initialSessionId = capturedContext.focusSession.sessionId;
+    const startTime = 1000000;
+    const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(startTime);
+
+    act(() => {
+      capturedContext.beginFocusRunning();
+    });
+
+    // Advance 5 minutes
+    nowSpy.mockReturnValue(startTime + 300000);
+
+    // User adds 15 minutes to the same task
+    act(() => {
+      capturedContext.extendFocusSession(15);
+    });
+
+    expect(capturedContext.focusSession.sessionId).toBe(initialSessionId);
+    expect(capturedContext.focusSession.targetMinutes).toBe(40); // 25 + 15
+    expect(capturedContext.focusSession.timeLeftSeconds).toBe(2100); // (1500 - 300) + 900
+    expect(capturedContext.focusSession.sessionEndTime).toBe(startTime + (40 * 60 * 1000));
+
+    nowSpy.mockRestore();
+  });
+
+  test('11. Adapted Pomodoro Cycle — taking break, break state, and resuming next work cycle on SAME task', () => {
+    mountContext();
+
+    act(() => {
+      capturedContext.startFocusSession(sampleTask, 25);
+    });
+
+    const startTime = 1000000;
+    const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(startTime);
+
+    act(() => {
+      capturedContext.beginFocusRunning();
+    });
+
+    // Run for 25 minutes
+    nowSpy.mockReturnValue(startTime + 1500000);
+
+    // User completes work interval and starts 5m Pomodoro Break
+    act(() => {
+      capturedContext.startFocusBreak(5);
+    });
+
+    expect(capturedContext.focusSession.status).toBe('break');
+    expect(capturedContext.focusSession.isBreak).toBe(true);
+    expect(capturedContext.focusSession.completedCycles).toBe(1);
+    expect(capturedContext.focusSession.elapsedMs).toBe(1500000); // Exact 25m work preserved!
+    expect(capturedContext.focusSession.timeLeftSeconds).toBe(300); // 5m break
+
+    // Break finishes: resume next work interval on the SAME task
+    const breakEndTime = startTime + 1800000;
+    nowSpy.mockReturnValue(breakEndTime);
+
+    act(() => {
+      capturedContext.resumeFocusFromBreak(25);
+    });
+
+    expect(capturedContext.focusSession.status).toBe('running');
+    expect(capturedContext.focusSession.isBreak).toBe(false);
+    expect(capturedContext.focusSession.pomodoroCycle).toBe(2);
+    expect(capturedContext.focusSession.task.id).toBe(sampleTask.id);
+    expect(capturedContext.focusSession.targetMinutes).toBe(50); // 25 + 25 accumulated
+    expect(capturedContext.focusSession.timeLeftSeconds).toBe(1500);
+
+    nowSpy.mockRestore();
+  });
+
+  test('12. FocusSpace UI — time extension chips and IntervalCheckInModal interaction', () => {
+    const mockRunningSession = {
+      sessionId: 'session-ui-extension-test',
+      id: 'session-ui-extension-test',
+      task: sampleTask,
+      status: 'running',
+      targetMinutes: 25,
+      timeLeftSeconds: 5,
+      sessionStartTime: Date.now() - 1495000,
+      sessionEndTime: Date.now() + 5000,
+      elapsedMs: 1495000,
+      pomodoroCycle: 1,
+      breakDurationMinutes: 5
+    };
+
+    const onExtendTime = jest.fn();
+    const onStartBreak = jest.fn();
+    const onOpenReflection = jest.fn();
+    const onResume = jest.fn();
+    const onPause = jest.fn();
+
+    act(() => {
+      root.render(
+        <FocusSpace
+          session={mockRunningSession}
+          onExtendTime={onExtendTime}
+          onStartBreak={onStartBreak}
+          onOpenReflection={onOpenReflection}
+          onResume={onResume}
+          onPause={onPause}
+        />
+      );
+    });
+
+    // 1. Verify quick time extension button (+15m)
+    const plus15Btn = Array.from(container.querySelectorAll('button')).find(b => b.textContent.trim() === '+15m');
+    expect(plus15Btn).toBeTruthy();
+
+    act(() => {
+      plus15Btn.click();
+    });
+
+    expect(onExtendTime).toHaveBeenCalledWith(15);
+
+    // 2. Simulate timer completion and verify Interval Check-in Modal renders
+    const expiredSession = {
+      ...mockRunningSession,
+      timeLeftSeconds: 0,
+      sessionEndTime: Date.now() - 1000
+    };
+
+    act(() => {
+      root.render(
+        <FocusSpace
+          session={expiredSession}
+          onExtendTime={onExtendTime}
+          onStartBreak={onStartBreak}
+          onOpenReflection={onOpenReflection}
+          onResume={onResume}
+          onPause={onPause}
+        />
+      );
+    });
+
+    const checkInModal = container.querySelector('[aria-label="Focus Interval Check-In"]');
+    expect(checkInModal).toBeTruthy();
+    expect(checkInModal.textContent).toContain('Is this task finished?');
+    expect(checkInModal.textContent).toContain('Yes, Task is Finished');
+    expect(checkInModal.textContent).toContain('Take a Restorative Break');
+
+    // 3. Click "Yes, Task is Finished" -> calls onOpenReflection
+    const finishedBtn = Array.from(checkInModal.querySelectorAll('button')).find(b => b.textContent.includes('Yes, Task is Finished'));
+    expect(finishedBtn).toBeTruthy();
+
+    act(() => {
+      finishedBtn.click();
+    });
+
+    expect(onOpenReflection).toHaveBeenCalledTimes(1);
+  });
 });
+

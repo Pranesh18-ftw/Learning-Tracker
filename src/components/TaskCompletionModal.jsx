@@ -81,20 +81,25 @@ const TaskCompletionModal = ({
   return (
     <div
       ref={modalContainerRef}
-      className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+      className="fixed inset-0 bg-[#141312]/75 backdrop-blur-sm flex items-center justify-center z-50 p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="task-completion-modal-title"
     >
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 sm:p-8 max-w-md w-full shadow-2xl relative max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between mb-6">
-          <h3 id="task-completion-modal-title" className="text-xl font-bold text-slate-900 dark:text-white">
-            Task Completion
-          </h3>
+      <div className="glass-panel-elevated rounded-2xl p-6 sm:p-8 max-w-md w-full shadow-2xl relative max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between mb-6 pb-3 border-b border-stone-200 dark:border-[#2A2725]">
+          <div>
+            <div className="text-[10px] font-mono uppercase tracking-widest text-stone-500 dark:text-stone-400 font-bold mb-0.5">
+              Workbench · Log Entry
+            </div>
+            <h3 id="task-completion-modal-title" className="text-xl font-bold text-[#141312] dark:text-[#FAF8F5] tracking-tight">
+              Task Completion
+            </h3>
+          </div>
           <button
             type="button"
             onClick={onClose}
-            className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            className="p-1.5 rounded-lg text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 hover:bg-stone-200/50 dark:hover:bg-[#2A2725] transition-colors"
             aria-label="Close task completion dialog"
           >
             <X className="w-5 h-5" />
@@ -102,15 +107,15 @@ const TaskCompletionModal = ({
         </div>
 
         <div className="mb-6">
-          <div className="flex items-center gap-2 mb-4 p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-100 dark:border-slate-800">
-            <Target className="w-5 h-5 text-blue-600 dark:text-blue-400 shrink-0" />
-            <span className="font-semibold text-slate-800 dark:text-slate-200 text-sm truncate">{taskName}</span>
+          <div className="flex items-center gap-2.5 p-3.5 bg-stone-100 dark:bg-[#141312] rounded-xl border border-stone-200 dark:border-[#2A2725]">
+            <Target className="w-5 h-5 text-[#3B5571] dark:text-[#486581] shrink-0" />
+            <span className="font-semibold text-[#141312] dark:text-stone-200 text-sm truncate">{taskName}</span>
           </div>
         </div>
 
         <div className="space-y-4 mb-6">
           <div>
-            <label htmlFor="task-completion-time" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+            <label htmlFor="task-completion-time" className="block text-xs font-mono font-bold text-stone-700 dark:text-stone-300 mb-1.5 uppercase tracking-wide">
               Time Spent (minutes)
             </label>
             <input
@@ -118,8 +123,8 @@ const TaskCompletionModal = ({
               type="number"
               value={timeSpent}
               onChange={(e) => setTimeSpent(e.target.value)}
-              className={`w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                errors.timeSpent ? 'border-red-500' : 'border-slate-300 dark:border-slate-700'
+              className={`w-full px-3.5 py-2.5 border rounded-xl bg-white dark:bg-[#141312] text-[#141312] dark:text-[#FAF8F5] font-mono text-sm focus:outline-none focus:ring-2 focus:ring-[#C25524] transition-colors ${
+                errors.timeSpent ? 'border-red-500' : 'border-stone-300 dark:border-[#2A2725]'
               }`}
               placeholder="25"
               min="0"
@@ -131,14 +136,14 @@ const TaskCompletionModal = ({
           </div>
 
           <div>
-            <label htmlFor="task-completion-difficulty" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+            <label htmlFor="task-completion-difficulty" className="block text-xs font-mono font-bold text-stone-700 dark:text-stone-300 mb-1.5 uppercase tracking-wide">
               Difficulty
             </label>
             <select
               id="task-completion-difficulty"
               value={difficulty}
               onChange={(e) => setDifficulty(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3.5 py-2.5 border border-stone-300 dark:border-[#2A2725] rounded-xl bg-white dark:bg-[#141312] text-[#141312] dark:text-[#FAF8F5] text-sm focus:outline-none focus:ring-2 focus:ring-[#C25524] transition-colors"
             >
               <option value="easy">Easy</option>
               <option value="medium">Medium</option>
@@ -147,14 +152,14 @@ const TaskCompletionModal = ({
           </div>
 
           <div>
-            <label htmlFor="task-completion-notes" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+            <label htmlFor="task-completion-notes" className="block text-xs font-mono font-bold text-stone-700 dark:text-stone-300 mb-1.5 uppercase tracking-wide">
               Notes (optional)
             </label>
             <textarea
               id="task-completion-notes"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3.5 py-2.5 border border-stone-300 dark:border-[#2A2725] rounded-xl bg-white dark:bg-[#141312] text-[#141312] dark:text-[#FAF8F5] text-sm focus:outline-none focus:ring-2 focus:ring-[#C25524] transition-colors resize-none"
               rows={3}
               placeholder="Any challenges or insights?"
             />
@@ -165,14 +170,14 @@ const TaskCompletionModal = ({
             <button
               type="button"
               onClick={() => setShowPostponeOptions(!showPostponeOptions)}
-              className="text-blue-600 dark:text-blue-400 hover:text-blue-700 text-sm font-medium mb-2 focus:outline-none focus:underline"
+              className="text-[#3B5571] dark:text-[#486581] hover:text-[#C25524] dark:hover:text-[#D96E3A] text-xs font-mono font-bold uppercase tracking-wider mb-2 focus:outline-none transition-colors"
             >
               {showPostponeOptions ? 'Hide' : 'Show'} postpone options
             </button>
 
             {showPostponeOptions && (
-              <div>
-                <label htmlFor="task-completion-postpone" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+              <div className="pt-2">
+                <label htmlFor="task-completion-postpone" className="block text-xs font-mono font-bold text-stone-700 dark:text-stone-300 mb-1.5 uppercase tracking-wide">
                   Postpone Until
                 </label>
                 <input
@@ -180,8 +185,8 @@ const TaskCompletionModal = ({
                   type="date"
                   value={postponeDate}
                   onChange={(e) => setPostponeDate(e.target.value)}
-                  className={`w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                    errors.postponeDate ? 'border-red-500' : 'border-slate-300 dark:border-slate-700'
+                  className={`w-full px-3.5 py-2.5 border rounded-xl bg-white dark:bg-[#141312] text-[#141312] dark:text-[#FAF8F5] text-sm focus:outline-none focus:ring-2 focus:ring-[#C25524] transition-colors ${
+                    errors.postponeDate ? 'border-red-500' : 'border-stone-300 dark:border-[#2A2725]'
                   }`}
                   min={getLocalDateKey()}
                 />
@@ -193,11 +198,11 @@ const TaskCompletionModal = ({
           </div>
         </div>
 
-        <div className="flex gap-3">
+        <div className="flex gap-3 pt-2">
           <button
             type="button"
             onClick={handleFinish}
-            className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-green-600 text-white font-medium rounded-xl hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 transition-colors shadow-sm"
+            className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 btn-workbench-sage font-medium rounded-xl shadow-sm cursor-pointer"
           >
             <CheckCircle2 className="w-4 h-4" />
             Finish
@@ -205,7 +210,7 @@ const TaskCompletionModal = ({
           <button
             type="button"
             onClick={handlePostpone}
-            className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-600 text-white font-medium rounded-xl hover:bg-amber-700 focus:outline-none focus:ring-2 focus:ring-amber-500 transition-colors shadow-sm"
+            className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 btn-workbench-copper font-medium rounded-xl shadow-sm cursor-pointer"
           >
             <Clock className="w-4 h-4" />
             Postpone

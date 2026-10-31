@@ -6,7 +6,6 @@ import {
   FolderGit2,
   AlertTriangle,
   Clock,
-  Sparkles,
   Compass,
   AlertCircle
 } from 'lucide-react';
@@ -211,7 +210,7 @@ const FieldIntelligenceDrawer = ({
                 : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
             }`}
           >
-            <Sparkles className="w-4 h-4" />
+            <AlertCircle className="w-4 h-4" />
             <span>Gaps & Adaptation</span>
           </button>
         </div>
@@ -576,8 +575,8 @@ const FieldIntelligenceDrawer = ({
                 {gapAnalysis.length > 0 ? (
                   <div className="space-y-2">
                     {gapAnalysis.map((gap, idx) => (
-                      <div key={idx} className="p-3.5 rounded-xl bg-purple-50/50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-900 text-xs text-purple-900 dark:text-purple-200 flex items-start gap-2.5">
-                        <Sparkles className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
+                      <div key={idx} className="p-3.5 rounded-xl bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/60 text-xs text-amber-950 dark:text-amber-200 flex items-start gap-2.5">
+                        <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
                         <span className="leading-relaxed">{gap}</span>
                       </div>
                     ))}

@@ -13,6 +13,7 @@
 import React, { useState } from 'react';
 import { Settings2, Clock, Sun, Moon, RotateCcw, MessageSquare, Send, Check } from 'lucide-react';
 import { safeStorageGet, safeStorageSet } from '../utils/storage';
+import { loadIdentity, saveIdentity } from '../utils/identityRealityResolver';
 
 const IdentitySystemSettings = ({
   settings,
@@ -30,6 +31,7 @@ const IdentitySystemSettings = ({
   const [feedbackText, setFeedbackText] = useState('');
   const [feedbackEmail, setFeedbackEmail] = useState('');
   const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
+  const [feedbackError, setFeedbackError] = useState(null);
   const [savedSection, setSavedSection] = useState(null);
 
   const [tempSettings, setTempSettings] = useState(() => ({
@@ -40,7 +42,8 @@ const IdentitySystemSettings = ({
     pomodoroBreakDuration: settings?.pomodoroBreakDuration ?? settings?.pomodoroShortBreak ?? 5,
     pomodoroShortBreak: settings?.pomodoroBreakDuration ?? settings?.pomodoroShortBreak ?? 5,
     pomodoroLongBreakDuration: settings?.pomodoroLongBreakDuration ?? settings?.pomodoroLongBreak ?? 15,
-    pomodoroLongBreak: settings?.pomodoroLongBreakDuration ?? settings?.pomodoroLongBreak ?? 15
+    pomodoroLongBreak: settings?.pomodoroLongBreakDuration ?? settings?.pomodoroLongBreak ?? 15,
+    revisionIntervalDays: settings?.revisionIntervalDays ?? 10
   }));
 
   React.useEffect(() => {
@@ -53,7 +56,8 @@ const IdentitySystemSettings = ({
         pomodoroBreakDuration: settings.pomodoroBreakDuration ?? settings.pomodoroShortBreak ?? prev.pomodoroBreakDuration,
         pomodoroShortBreak: settings.pomodoroBreakDuration ?? settings.pomodoroShortBreak ?? prev.pomodoroShortBreak,
         pomodoroLongBreakDuration: settings.pomodoroLongBreakDuration ?? settings.pomodoroLongBreak ?? prev.pomodoroLongBreakDuration,
-        pomodoroLongBreak: settings.pomodoroLongBreakDuration ?? settings.pomodoroLongBreak ?? prev.pomodoroLongBreak
+        pomodoroLongBreak: settings.pomodoroLongBreakDuration ?? settings.pomodoroLongBreak ?? prev.pomodoroLongBreak,
+        revisionIntervalDays: settings.revisionIntervalDays ?? prev.revisionIntervalDays ?? 10
       }));
     }
   }, [settings]);
@@ -73,6 +77,22 @@ const IdentitySystemSettings = ({
 
   const handleSaveSettings = (section = 'all') => {
     updateSettings(tempSettings);
+    if (tempSettings.pomodoroWorkDuration) {
+      try {
+        const id = loadIdentity();
+        if (id?.timeReality?.weekdayMinutes !== tempSettings.pomodoroWorkDuration) {
+          saveIdentity({
+            ...id,
+            timeReality: {
+              ...(id?.timeReality || {}),
+              weekdayMinutes: tempSettings.pomodoroWorkDuration
+            }
+          });
+        }
+      } catch (e) {
+        // Safe fallback
+      }
+    }
     setSavedSection(section);
     setTimeout(() => setSavedSection(null), 2000);
   };
@@ -81,6 +101,22 @@ const IdentitySystemSettings = ({
     const num = parseFloat(value) || 0;
     setTempSettings(prev => {
       const next = { ...prev, [key]: num };
+      if (key === 'pomodoroWorkDuration') {
+        try {
+          const id = loadIdentity();
+          if (id?.timeReality?.weekdayMinutes !== num) {
+            saveIdentity({
+              ...id,
+              timeReality: {
+                ...(id?.timeReality || {}),
+                weekdayMinutes: num
+              }
+            });
+          }
+        } catch (e) {
+          // Safe fallback
+        }
+      }
       if (key === 'pomodoroShortBreak' || key === 'pomodoroBreakDuration') {
         next.pomodoroShortBreak = num;
         next.pomodoroBreakDuration = num;
@@ -92,6 +128,9 @@ const IdentitySystemSettings = ({
       if (key === 'dailyLearningHours' || key === 'dailyGoalHours') {
         next.dailyLearningHours = num;
         next.dailyGoalHours = num;
+      }
+      if (key === 'revisionIntervalDays') {
+        next.revisionIntervalDays = Math.max(1, Math.min(365, parseInt(value, 10) || 10));
       }
       return next;
     });
@@ -108,9 +147,10 @@ const IdentitySystemSettings = ({
 
   const handleFeedbackSubmit = () => {
     if (!feedbackText.trim()) {
-      alert('Please enter your feedback before submitting.');
+      setFeedbackError('Please enter your feedback before submitting.');
       return;
     }
+    setFeedbackError(null);
 
     const feedback = {
       type: feedbackType,
@@ -126,7 +166,7 @@ const IdentitySystemSettings = ({
     const result = safeStorageSet('userFeedback', existingFeedback);
 
     if (!result.ok) {
-      alert(
+      setFeedbackError(
         result.error === 'quota'
           ? 'This device is out of storage. Your feedback was not saved.'
           : 'Your feedback could not be saved.'
@@ -141,7 +181,8 @@ const IdentitySystemSettings = ({
       setFeedbackText('');
       setFeedbackEmail('');
       setFeedbackType('general');
-    }, 2000);
+      setFeedbackError(null);
+    }, 1500);
   };
 
   return (
@@ -153,8 +194,8 @@ const IdentitySystemSettings = ({
           <Settings2 className="w-4 h-4" />
         </div>
         <div>
-          <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400 block">
-            Section 07 · System Controls
+          <span className="text-xs font-sans font-medium text-slate-500 dark:text-slate-400 block">
+            System Calibration & Preferences
           </span>
           <h2 className="font-display font-black text-xl text-slate-900 dark:text-white tracking-tight">
             Preferences & Application State
@@ -167,8 +208,8 @@ const IdentitySystemSettings = ({
         <div className="flex items-center gap-3">
           {isDarkMode ? <Moon className="w-5 h-5 text-violet-400" /> : <Sun className="w-5 h-5 text-amber-500" />}
           <div>
-            <div className="text-sm font-mono font-bold text-slate-900 dark:text-white">Theme Display Mode</div>
-            <div className="text-xs text-slate-500 dark:text-slate-400">Switch between light studio and dark control room</div>
+            <div className="text-sm font-medium text-slate-900 dark:text-white">Theme Display Mode</div>
+            <div className="text-xs font-sans text-slate-500 dark:text-slate-400">Switch between light studio and dark control room</div>
           </div>
         </div>
         <button
@@ -190,22 +231,22 @@ const IdentitySystemSettings = ({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Clock className="w-4 h-4 text-electric-500" />
-            <span className="text-xs font-mono font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
-              Focus & Pomodoro Timer Durations:
+            <span className="text-xs font-sans font-medium text-slate-700 dark:text-slate-300">
+              Focus & Pomodoro Timer Durations
             </span>
           </div>
 
           <button
             onClick={() => handleSaveSettings('timer')}
-            className="px-3 py-1 bg-electric-600 hover:bg-electric-700 text-white rounded-xl text-xs font-mono font-bold transition-colors"
+            className="px-3 py-1 bg-electric-600 hover:bg-electric-700 text-white rounded-xl text-xs font-sans font-semibold transition-colors cursor-pointer"
           >
             {savedSection === 'timer' ? 'Saved ✓' : 'Save Timer'}
           </button>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs font-mono">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs font-sans">
           <div>
-            <label className="text-slate-600 dark:text-slate-400 block mb-1">Work Interval:</label>
+            <label className="text-slate-600 dark:text-slate-400 block mb-1 font-medium">Work Interval:</label>
             <div className="flex items-center gap-2">
               <input
                 type="range"
@@ -216,14 +257,14 @@ const IdentitySystemSettings = ({
                 onChange={(e) => handleSettingChange('pomodoroWorkDuration', e.target.value)}
                 className="flex-1 accent-electric-500"
               />
-              <span className="font-bold text-slate-900 dark:text-white w-8 text-right">
+              <span className="font-bold text-slate-900 dark:text-white w-8 text-right font-mono">
                 {tempSettings?.pomodoroWorkDuration || 25}m
               </span>
             </div>
           </div>
 
           <div>
-            <label className="text-slate-600 dark:text-slate-400 block mb-1">Short Break:</label>
+            <label className="text-slate-600 dark:text-slate-400 block mb-1 font-medium">Short Break:</label>
             <div className="flex items-center gap-2">
               <input
                 type="range"
@@ -234,14 +275,14 @@ const IdentitySystemSettings = ({
                 onChange={(e) => handleSettingChange('pomodoroShortBreak', e.target.value)}
                 className="flex-1 accent-electric-500"
               />
-              <span className="font-bold text-slate-900 dark:text-white w-8 text-right">
+              <span className="font-bold text-slate-900 dark:text-white w-8 text-right font-mono">
                 {tempSettings.pomodoroShortBreak || 5}m
               </span>
             </div>
           </div>
 
           <div>
-            <label className="text-slate-600 dark:text-slate-400 block mb-1">Long Break:</label>
+            <label className="text-slate-600 dark:text-slate-400 block mb-1 font-medium">Long Break:</label>
             <div className="flex items-center gap-2">
               <input
                 type="range"
@@ -252,7 +293,7 @@ const IdentitySystemSettings = ({
                 onChange={(e) => handleSettingChange('pomodoroLongBreak', e.target.value)}
                 className="flex-1 accent-electric-500"
               />
-              <span className="font-bold text-slate-900 dark:text-white w-8 text-right">
+              <span className="font-bold text-slate-900 dark:text-white w-8 text-right font-mono">
                 {tempSettings.pomodoroLongBreak || 15}m
               </span>
             </div>
@@ -260,7 +301,109 @@ const IdentitySystemSettings = ({
         </div>
       </div>
 
-      {/* ── 3. FEEDBACK & DANGER ZONE ── */}
+      {/* ── 3. REVISION SCHEDULING (Spaced Deliberate Practice) ── */}
+      <div className="p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Clock className="w-4 h-4 text-amber-500" />
+            <h4 className="font-bold text-sm text-slate-900 dark:text-white">
+              Spaced Revision Cadence & Spider Reminders
+            </h4>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              id="test-revision-popup-btn"
+              onClick={() => {
+                window.dispatchEvent(
+                  new CustomEvent('lt_test_revision_popup', {
+                    detail: { interval: tempSettings.revisionIntervalDays || 10 }
+                  })
+                );
+              }}
+              className="px-3 py-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-800 rounded-xl text-xs font-sans font-medium transition-colors cursor-pointer"
+              title="Preview the revision popup and tactile electromagnetic animation"
+            >
+              ⚡ Test Pop-up
+            </button>
+
+            <button
+              type="button"
+              id="save-revision-settings-btn"
+              onClick={() => handleSaveSettings('revision')}
+              className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-sans font-semibold transition-colors cursor-pointer"
+            >
+              {savedSection === 'revision' ? 'Saved ✓' : 'Save Interval'}
+            </button>
+          </div>
+        </div>
+
+        <p className="text-xs font-sans text-slate-500 dark:text-slate-400 leading-relaxed">
+          Set after how many days a studied topic should pop for revision. When that day arrives, a tactile alert activates with electromagnetic recall animation to consolidate your retention.
+        </p>
+
+        {/* Quick Cadence Preset Selector */}
+        <div className="space-y-1.5">
+          <span className="text-xs font-sans font-medium text-slate-600 dark:text-slate-300 block">
+            Common Spacing Intervals:
+          </span>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {[
+              { days: 1, label: '1d (Next Day)' },
+              { days: 3, label: '3d (Fast)' },
+              { days: 5, label: '5d (Standard)' },
+              { days: 7, label: '7d (1 Week)' },
+              { days: 10, label: '10d (Default)' },
+              { days: 14, label: '14d (2 Weeks)' },
+              { days: 30, label: '30d (Monthly)' }
+            ].map((preset) => (
+              <button
+                key={preset.days}
+                type="button"
+                onClick={() => handleSettingChange('revisionIntervalDays', preset.days)}
+                className={`py-1 px-2.5 rounded-xl text-xs font-sans font-medium transition-all border cursor-pointer ${
+                  (tempSettings.revisionIntervalDays || 10) === preset.days
+                    ? 'bg-amber-500 text-slate-950 font-bold border-amber-400 shadow-sm'
+                    : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:border-amber-400'
+                }`}
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs font-sans pt-1">
+          <div>
+            <label className="text-slate-600 dark:text-slate-400 block mb-1 font-medium">
+              Custom Interval: <strong className="text-slate-900 dark:text-white font-mono">[{tempSettings.revisionIntervalDays || 10}] days</strong>
+            </label>
+            <div className="flex items-center gap-2">
+              <input
+                type="range"
+                id="revision-interval-slider"
+                min="1"
+                max="60"
+                step="1"
+                value={tempSettings.revisionIntervalDays || 10}
+                onChange={(e) => handleSettingChange('revisionIntervalDays', e.target.value)}
+                className="flex-1 accent-amber-500"
+              />
+              <span className="font-bold text-slate-900 dark:text-white w-10 text-right font-mono">
+                {tempSettings.revisionIntervalDays || 10}d
+              </span>
+            </div>
+          </div>
+
+          <div className="flex flex-col justify-center text-xs font-sans text-slate-500 dark:text-slate-400 bg-white/60 dark:bg-slate-900/40 p-3 rounded-xl border border-slate-200 dark:border-slate-800 space-y-0.5">
+            <span>Configured rule: <strong>Pop for revision every {tempSettings.revisionIntervalDays || 10} days</strong></span>
+            <span>Manual next-review dates or per-topic overrides take precedence when configured.</span>
+          </div>
+        </div>
+      </div>
+
+      {/* ── 4. FEEDBACK & DANGER ZONE ── */}
       <div className="pt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
 
         {/* Feedback Button */}
@@ -405,6 +548,12 @@ const IdentitySystemSettings = ({
                     className="w-full text-xs font-mono p-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200"
                   />
                 </div>
+
+                {feedbackError && (
+                  <p className="text-xs text-rose-600 dark:text-rose-400 font-bold font-mono">
+                    {feedbackError}
+                  </p>
+                )}
 
                 <div className="flex items-center justify-end gap-2 pt-2">
                   <button

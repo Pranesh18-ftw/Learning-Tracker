@@ -9,7 +9,9 @@ import {
   Clock,
   Zap,
   Smartphone,
-  RefreshCw
+  RefreshCw,
+  Coffee,
+  Plus
 } from 'lucide-react';
 import { ConceptSchematicGlyph } from './ConceptObject';
 import { resolveWhyItMatters } from '../utils/conceptRelationshipResolver';
@@ -26,6 +28,7 @@ import {
   subscribeToSessionRelay
 } from '../services/focusIntegrityService';
 import { APP_CATEGORIES, TELEMETRY_STATUS } from '../shared/focusIntegrityProtocol';
+import TemporalInstrumentTimer from './TemporalInstrumentTimer';
 
 /**
  * FocusSpace
@@ -51,16 +54,21 @@ const FocusSpace = ({
   onResume,
   onOpenReflection,
   onCommitEvidence,
-  onAbandon
+  onAbandon,
+  onExtendTime = () => {},
+  onStartBreak = () => {},
+  onResumeFromBreak = () => {}
 }) => {
   const {
     task,
-    status = 'ready', // 'ready' | 'running' | 'paused' | 'reflection'
+    status = 'ready', // 'ready' | 'running' | 'paused' | 'break' | 'break-paused' | 'reflection'
     targetMinutes = 25,
     timeLeftSeconds = 1500,
     sessionStartTime,
     sessionEndTime,
-    elapsedMs = 0
+    elapsedMs = 0,
+    pomodoroCycle = 1,
+    breakDurationMinutes = 5
   } = session;
 
   // Local state for interactive drawers and reflection inputs
@@ -71,6 +79,9 @@ const FocusSpace = ({
   const [reflectionDifficulty, setReflectionDifficulty] = useState('medium'); // 'easy' | 'medium' | 'hard'
   const [currentTimeLeft, setCurrentTimeLeft] = useState(timeLeftSeconds);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showIntervalCheckIn, setShowIntervalCheckIn] = useState(false);
+  const [showBreakOverModal, setShowBreakOverModal] = useState(false);
+  const [timeAddedNotice, setTimeAddedNotice] = useState(null);
 
   // Focus Integrity Companion Integration (Prompts #4, #25, #35)
   const sessionId = session.sessionId || session.id;
@@ -246,10 +257,24 @@ const FocusSpace = ({
       setTimerAnnouncement(`Focus timer started. ${targetMinutes} minutes planned.`);
     } else if (status === 'paused') {
       setTimerAnnouncement(`Focus timer paused.`);
+    } else if (status === 'break') {
+      setTimerAnnouncement(`Restorative break started. Relax and step away from the screen.`);
     } else if (status === 'reflection') {
       setTimerAnnouncement(`Focus session concluded. Opening reflection dialog.`);
     }
   }, [status, conceptName, targetMinutes]);
+
+  const handleAddTime = useCallback((minutes) => {
+    completedOnceRef.current = false;
+    setShowIntervalCheckIn(false);
+    setShowBreakOverModal(false);
+    setTimeAddedNotice(`+${minutes}m added`);
+    setTimeout(() => setTimeAddedNotice(null), 3000);
+    setCurrentTimeLeft(prev => prev + minutes * 60);
+    if (onExtendTime) {
+      onExtendTime(minutes);
+    }
+  }, [onExtendTime]);
 
   // ── WALL-CLOCK MONOTONIC TIMER TICK (1000ms interval for render efficiency) ──
   const tickWallClock = useCallback(() => {
@@ -260,12 +285,16 @@ const FocusSpace = ({
     if (remaining <= 0 && !completedOnceRef.current) {
       completedOnceRef.current = true;
       if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
-      onOpenReflection && onOpenReflection();
+      if (status === 'break') {
+        setShowBreakOverModal(true);
+      } else {
+        setShowIntervalCheckIn(true);
+      }
     }
-  }, [sessionEndTime, onOpenReflection]);
+  }, [sessionEndTime, status]);
 
   useEffect(() => {
-    if (status === 'running' && sessionEndTime) {
+    if ((status === 'running' || status === 'break') && sessionEndTime) {
       if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
       timerIntervalRef.current = setInterval(tickWallClock, 1000);
       tickWallClock();
@@ -336,6 +365,10 @@ const FocusSpace = ({
           onResume && onResume();
         } else if (status === 'ready') {
           onBeginRunning && onBeginRunning();
+        } else if (status === 'break') {
+          completedOnceRef.current = false;
+          setShowBreakOverModal(false);
+          onResumeFromBreak ? onResumeFromBreak() : (onResume && onResume());
         }
       } else if (e.key === 'Escape') {
         e.preventDefault();
@@ -364,7 +397,7 @@ const FocusSpace = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [status, onPause, onResume, onBeginRunning, onAbandon, activeTool, handleCommit]);
+  }, [status, onPause, onResume, onBeginRunning, onAbandon, onResumeFromBreak, activeTool, handleCommit]);
 
   // =========================================================================
   // STATE 1: READY (Quick, Tactile Preparation Screen)
@@ -372,14 +405,14 @@ const FocusSpace = ({
   if (status === 'ready') {
     return (
       <div
-        className="fixed inset-0 z-50 bg-[#0B0F19] text-white flex flex-col justify-between p-6 sm:p-12 anim-fade-in"
+        className="fixed inset-0 z-50 bg-[#0B0D12] text-white flex flex-col justify-between p-6 sm:p-12 anim-fade-in"
         role="region"
         aria-label="Focus Readiness Space"
       >
         {/* Top Minimal Bar */}
         <div className="flex items-center justify-between text-xs font-mono font-bold text-slate-400">
           <div className="flex items-center gap-2">
-            <span className="text-coral-500">●</span>
+            <span className="text-emerald-400">●</span>
             <span>INTENTIONAL FOCUS TRANSITION</span>
           </div>
           <button
@@ -393,7 +426,7 @@ const FocusSpace = ({
         {/* Center Readiness Card */}
         <div className="max-w-md mx-auto text-center space-y-8 my-auto">
           <div className="space-y-2">
-            <span className="text-xs font-mono font-black uppercase tracking-widest text-coral-500">
+            <span className="text-xs font-mono font-black uppercase tracking-widest text-emerald-400">
               {subjectName} · {phaseName}
             </span>
             <h1 className="font-display font-black text-3xl sm:text-4xl tracking-tight text-white">
@@ -402,7 +435,7 @@ const FocusSpace = ({
           </div>
 
           {/* Schematic Symbol */}
-          <div className="w-20 h-20 mx-auto rounded-3xl bg-slate-900 border-2 border-coral-500/40 flex items-center justify-center text-coral-400 shadow-xl">
+          <div className="w-20 h-20 mx-auto rounded-3xl bg-slate-900/90 border border-white/20 flex items-center justify-center text-white shadow-xl">
             <ConceptSchematicGlyph glyph={glyph} className="w-10 h-10" isCurrent={true} />
           </div>
 
@@ -417,7 +450,7 @@ const FocusSpace = ({
           </div>
 
           <div className="text-xs font-mono text-slate-400 flex items-center justify-center gap-1.5">
-            <Clock className="w-3.5 h-3.5 text-coral-500" />
+            <Clock className="w-3.5 h-3.5 text-slate-400" />
             <span>Planned Duration: {targetMinutes} minutes</span>
           </div>
 
@@ -447,12 +480,12 @@ const FocusSpace = ({
           <div className="pt-4 flex flex-col items-center gap-3">
             <button
               onClick={onBeginRunning}
-              className="w-full max-w-xs py-4 rounded-2xl bg-coral-500 hover:bg-coral-600 text-white font-display font-black text-base shadow-lg shadow-coral-500/20 active:scale-95 transition-all flex items-center justify-center gap-2"
+              className="w-full max-w-xs py-3.5 px-6 rounded-2xl btn-liquid-pearl font-mono font-bold text-sm tracking-wider uppercase transition-all flex items-center justify-center gap-2 cursor-pointer shadow-xl"
             >
-              <Zap className="w-5 h-5 fill-current" />
+              <Zap className="w-4 h-4 fill-current" />
               <span>START FOCUS</span>
             </button>
-            <span className="text-[11px] font-mono text-slate-400">
+            <span className="text-[11px] font-mono text-stone-500">
               Press [Space] to begin
             </span>
           </div>
@@ -467,22 +500,190 @@ const FocusSpace = ({
   }
 
   // =========================================================================
+  // STATE: BREAK (Serene Restorative Pomodoro Interval)
+  // =========================================================================
+  if (status === 'break' || status === 'break-paused') {
+    return (
+      <div
+        className="fixed inset-0 z-50 bg-[#07090E] text-stone-100 flex flex-col justify-between p-4 sm:p-8 select-none transition-colors duration-300"
+        role="region"
+        aria-label="Pomodoro Restorative Break"
+      >
+        {/* TOP ATTENTION BAR */}
+        <header className="flex items-center justify-between text-xs font-mono font-bold text-slate-400 z-20">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+            <span className="text-cyan-300">Restorative Break</span>
+            <span className="text-slate-600">/</span>
+            <span className="text-slate-400">Cycle {pomodoroCycle} Complete</span>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => {
+                if (window.confirm("Discard this Focus session? Unsaved session time will not be recorded.")) {
+                  onAbandon && onAbandon();
+                }
+              }}
+              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+              title="Leave Focus"
+              aria-label="Exit Focus"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </header>
+
+        {/* CENTER RESTORATIVE STAGE */}
+        <main className="max-w-xl mx-auto w-full text-center space-y-6 my-auto px-4 z-10">
+          <div className="w-20 h-20 mx-auto rounded-3xl bg-cyan-950/60 border border-cyan-500/30 flex items-center justify-center text-cyan-300 shadow-2xl shadow-cyan-500/10">
+            <Coffee className="w-10 h-10 animate-pulse" />
+          </div>
+
+          <div className="space-y-2">
+            <span className="text-xs font-mono font-bold uppercase tracking-widest text-cyan-400 block">
+              Cycle {pomodoroCycle} Completed · Rest & Consolidate
+            </span>
+            <h1 className="font-display font-black text-2xl sm:text-3xl text-white tracking-tight">
+              Step away from the screen
+            </h1>
+            <p className="text-xs sm:text-sm text-slate-400 max-w-md mx-auto leading-relaxed">
+              Diffused thinking consolidates neural pathways while you rest. Stretch, hydrate, look into the distance, and let your subconscious work on <span className="text-slate-200 font-medium font-mono">"{conceptName}"</span>.
+            </p>
+          </div>
+
+          {/* Break Countdown Timer */}
+          <div className="p-6 rounded-3xl bg-slate-900/60 border border-slate-800/80 shadow-inner max-w-xs mx-auto space-y-2">
+            <span className="text-[10px] font-mono uppercase tracking-widest text-slate-500 block font-bold">
+              Rest Time Remaining
+            </span>
+            <div className="font-mono text-4xl sm:text-5xl font-black text-cyan-300 tracking-tight">
+              {formatTimeStr(currentTimeLeft)}
+            </div>
+            <div className="text-[11px] font-mono text-slate-400">
+              Next focus interval will resume on the same task
+            </div>
+          </div>
+
+          {/* Break Controls */}
+          <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
+            <button
+              onClick={() => {
+                completedOnceRef.current = false;
+                setShowBreakOverModal(false);
+                onResumeFromBreak ? onResumeFromBreak() : (onResume && onResume());
+              }}
+              className="w-full sm:w-auto px-6 py-3.5 rounded-2xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-display font-black text-sm tracking-wide shadow-lg shadow-cyan-500/20 active:scale-95 transition-all flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <Play className="w-4 h-4 fill-current" />
+              <span>RESUME WORK (CYCLE {pomodoroCycle + 1})</span>
+            </button>
+
+            <button
+              onClick={() => handleAddTime(2)}
+              className="w-full sm:w-auto px-4 py-3.5 rounded-2xl bg-slate-900 hover:bg-slate-800 text-slate-300 font-mono font-bold text-xs border border-slate-800 hover:border-slate-700 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>+2m More Rest</span>
+            </button>
+          </div>
+
+          {/* Finished early escape hatch */}
+          <div className="pt-2">
+            <button
+              onClick={onOpenReflection}
+              className="text-xs font-mono text-slate-500 hover:text-emerald-400 transition-colors cursor-pointer"
+            >
+              Finished earlier than expected? Open reflection & log evidence →
+            </button>
+          </div>
+        </main>
+
+        <footer className="text-center text-xs font-mono text-slate-600">
+          Adapted Pomodoro Cycle · Continuous task focus with honest cognitive pacing
+        </footer>
+
+        {/* Break Over Modal */}
+        {showBreakOverModal && (
+          <div
+            className="fixed inset-0 z-50 bg-[#0B0D12]/90 backdrop-blur-md text-stone-100 flex items-center justify-center p-4 anim-pop"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Break Finished"
+          >
+            <div className="w-full max-w-md obsidian-liquid-card p-6 sm:p-8 space-y-6 shadow-2xl relative border border-cyan-500/30">
+              <div className="text-center space-y-2">
+                <div className="w-12 h-12 mx-auto rounded-2xl bg-cyan-500/20 text-cyan-300 flex items-center justify-center">
+                  <Coffee className="w-6 h-6" />
+                </div>
+                <span className="text-xs font-mono font-bold uppercase tracking-wider text-cyan-400 block">
+                  Break Over · Refreshed & Ready
+                </span>
+                <h2 className="font-display font-black text-2xl text-white">
+                  Ready for Next Interval?
+                </h2>
+                <p className="text-xs text-slate-300">
+                  Resuming work on: <span className="text-white font-semibold font-mono">"{conceptName}"</span> (Cycle {pomodoroCycle + 1})
+                </p>
+              </div>
+
+              <div className="space-y-3 pt-2">
+                <button
+                  onClick={() => {
+                    completedOnceRef.current = false;
+                    setShowBreakOverModal(false);
+                    onResumeFromBreak ? onResumeFromBreak() : (onResume && onResume());
+                  }}
+                  className="w-full py-3.5 rounded-2xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-display font-black text-sm tracking-wide shadow-lg shadow-cyan-500/20 active:scale-95 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Play className="w-4 h-4 fill-current" />
+                  <span>START CYCLE {pomodoroCycle + 1} FOCUS</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setShowBreakOverModal(false);
+                    onOpenReflection && onOpenReflection();
+                  }}
+                  className="w-full py-3 rounded-2xl bg-slate-900 hover:bg-slate-800 text-emerald-400 font-mono font-bold text-xs border border-emerald-500/30 flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Task is Finished (Reflect & Save)</span>
+                </button>
+
+                <button
+                  onClick={() => handleAddTime(3)}
+                  className="w-full py-2 text-xs font-mono text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
+                >
+                  +3m More Break
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // =========================================================================
   // STATE 2: REFLECTION (Post-Session Realization & Evidence Record)
   // =========================================================================
   if (status === 'reflection') {
     return (
       <div
-        className="fixed inset-0 z-50 bg-[#0B0F19] text-white flex items-center justify-center p-4 sm:p-6 overflow-y-auto anim-pop"
+        className="fixed inset-0 z-50 bg-[#0B0D12]/90 backdrop-blur-md text-stone-100 flex items-center justify-center p-4 sm:p-6 overflow-y-auto anim-pop"
         role="dialog"
         aria-modal="true"
         aria-label="Focus Reflection Space"
       >
-        <div className="w-full max-w-lg bg-slate-900 border-2 border-emerald-500/60 rounded-3xl p-6 sm:p-8 space-y-6 shadow-2xl">
+        <div className="w-full max-w-lg obsidian-liquid-card p-6 sm:p-8 space-y-6 shadow-2xl relative overflow-hidden">
+          <div className="glass-sheen-line" aria-hidden="true" />
+          <div className="glass-noise-material absolute inset-0 pointer-events-none rounded-[inherit]" aria-hidden="true" />
 
           {/* 1. WHAT YOU WORKED ON */}
           <div className="text-center space-y-1.5 pb-3 border-b border-slate-800">
             <span className="text-xs font-mono font-black uppercase tracking-widest text-emerald-400">
-              Session Concluded · {minutesSpent} Minutes
+              Session Concluded · {minutesSpent} Minutes{pomodoroCycle > 1 ? ` (${pomodoroCycle} Pomodoro Cycles)` : ''}
             </span>
             <h2 className="font-display font-black text-2xl sm:text-3xl text-white">
               {conceptName}
@@ -651,7 +852,8 @@ const FocusSpace = ({
                                 type="button"
                                 onClick={() => {
                                   const updated = correctAppClassification(app.packageName, APP_CATEGORIES.REFERENCE, { updateHistory: true, sessionId });
-                                  if (updated && updated.appBreakdown) setCompanionTelemetry(updated);
+                                  if (updated && updated.record) setCompanionTelemetry(updated.record);
+                                  else if (updated && updated.appBreakdown) setCompanionTelemetry(updated);
                                 }}
                                 className="text-[10px] text-electric-400 hover:text-electric-300 underline font-sans"
                               >
@@ -663,12 +865,39 @@ const FocusSpace = ({
                                 type="button"
                                 onClick={() => {
                                   const updated = correctAppClassification(app.packageName, APP_CATEGORIES.DISTRACTION, { updateHistory: true, sessionId });
-                                  if (updated && updated.appBreakdown) setCompanionTelemetry(updated);
+                                  if (updated && updated.record) setCompanionTelemetry(updated.record);
+                                  else if (updated && updated.appBreakdown) setCompanionTelemetry(updated);
                                 }}
                                 className="text-[10px] text-slate-500 hover:text-slate-400 underline font-sans"
                               >
                                 Mark as distraction
                               </button>
+                            )}
+                            {app.category !== APP_CATEGORIES.REFERENCE && app.category !== APP_CATEGORIES.DISTRACTION && (
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const updated = correctAppClassification(app.packageName, APP_CATEGORIES.REFERENCE, { updateHistory: true, sessionId });
+                                    if (updated && updated.record) setCompanionTelemetry(updated.record);
+                                    else if (updated && updated.appBreakdown) setCompanionTelemetry(updated);
+                                  }}
+                                  className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 font-sans font-medium"
+                                >
+                                  + Mark Reference
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const updated = correctAppClassification(app.packageName, APP_CATEGORIES.DISTRACTION, { updateHistory: true, sessionId });
+                                    if (updated && updated.record) setCompanionTelemetry(updated.record);
+                                    else if (updated && updated.appBreakdown) setCompanionTelemetry(updated);
+                                  }}
+                                  className="text-[10px] px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 hover:bg-rose-500/30 font-sans font-medium"
+                                >
+                                  + Mark Distraction
+                                </button>
+                              </div>
                             )}
                           </div>
                         ))}
@@ -780,7 +1009,7 @@ const FocusSpace = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-[#0B0F19] text-white flex flex-col justify-between p-4 sm:p-8 select-none transition-colors duration-300"
+      className="fixed inset-0 z-50 bg-[#0B0D12] text-stone-100 flex flex-col justify-between p-4 sm:p-8 select-none transition-colors duration-300"
       role="region"
       aria-label="Active Focus Space"
     >
@@ -792,6 +1021,9 @@ const FocusSpace = ({
           <span className="text-slate-300">{subjectName}</span>
           <span className="text-slate-600">/</span>
           <span className="text-slate-400">{phaseName}</span>
+          <span className="px-2 py-0.5 rounded-md bg-slate-800/80 border border-slate-700/60 text-[10px] font-mono text-coral-300">
+            Cycle {pomodoroCycle}
+          </span>
         </div>
 
         <div className="flex items-center gap-3">
@@ -855,20 +1087,17 @@ const FocusSpace = ({
           </h1>
         </div>
 
-        {/* ── CALM SECONDARY TIMER PROJECTION ── */}
-        <div className="space-y-1 pt-2">
-          <div
-            aria-hidden="true"
-            className="font-mono font-bold text-3xl sm:text-4xl text-slate-300 tracking-tight flex items-center justify-center gap-2"
-          >
-            <span>{formatTimeStr(currentTimeLeft)}</span>
-          </div>
+        {/* ── 2.5D CINEMATIC TEMPORAL INSTRUMENT TIMER ── */}
+        <div className="space-y-2 pt-2">
+          <TemporalInstrumentTimer
+            timeLeftSeconds={currentTimeLeft}
+            targetMinutes={targetMinutes}
+            isPaused={isPaused}
+            status={status}
+          />
           <div className="sr-only" role="status" aria-live="polite">
-            {timerAnnouncement}
+            {timerAnnouncement} · {formatTimeStr(currentTimeLeft)} remaining
           </div>
-          <p className="text-[11px] font-mono text-slate-400">
-            {isPaused ? 'Paused · Take a real break' : 'Remaining in this focus container'}
-          </p>
         </div>
 
         {/* ── PAUSE / RESUME / FINISH CONTROLS ── */}
@@ -893,11 +1122,61 @@ const FocusSpace = ({
 
           <button
             onClick={onOpenReflection}
-            className="px-5 py-3 rounded-2xl bg-slate-900 hover:bg-slate-800 text-emerald-400 font-display font-bold text-sm border border-emerald-500/40 flex items-center gap-1.5 transition-colors"
+            className="px-5 py-3 rounded-2xl bg-slate-900 hover:bg-slate-800 text-emerald-400 font-display font-bold text-sm border border-emerald-500/40 flex items-center gap-1.5 transition-colors cursor-pointer"
           >
             <CheckCircle2 className="w-4 h-4" />
             <span>FINISH TAKE</span>
           </button>
+        </div>
+
+        {/* ── ON-THE-FLY TIME EXTENSION TOOLBAR ── */}
+        <div className="pt-2 flex flex-col items-center gap-2">
+          <div className="flex flex-wrap items-center justify-center gap-2 text-xs font-mono text-slate-400">
+            <span className="flex items-center gap-1 text-slate-400 font-medium">
+              <Clock className="w-3.5 h-3.5 text-slate-500" />
+              <span>Add time:</span>
+            </span>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => handleAddTime(5)}
+                className="px-2.5 py-1 rounded-lg bg-slate-900/90 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 hover:border-slate-700 transition-all font-mono font-bold text-[11px] cursor-pointer"
+                title="Add 5 minutes to this session"
+              >
+                +5m
+              </button>
+              <button
+                type="button"
+                onClick={() => handleAddTime(10)}
+                className="px-2.5 py-1 rounded-lg bg-slate-900/90 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 hover:border-slate-700 transition-all font-mono font-bold text-[11px] cursor-pointer"
+                title="Add 10 minutes to this session"
+              >
+                +10m
+              </button>
+              <button
+                type="button"
+                onClick={() => handleAddTime(15)}
+                className="px-2.5 py-1 rounded-lg bg-slate-900/90 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 hover:border-slate-700 transition-all font-mono font-bold text-[11px] cursor-pointer"
+                title="Add 15 minutes to this session"
+              >
+                +15m
+              </button>
+              <button
+                type="button"
+                onClick={() => handleAddTime(25)}
+                className="px-2.5 py-1 rounded-lg bg-slate-900/90 hover:bg-slate-800 text-amber-300 hover:text-amber-200 border border-amber-500/30 hover:border-amber-500/60 transition-all font-mono font-bold text-[11px] cursor-pointer"
+                title="Add 25-minute Pomodoro block"
+              >
+                +25m
+              </button>
+            </div>
+          </div>
+
+          {timeAddedNotice && (
+            <div className="text-xs font-mono text-emerald-400 bg-emerald-950/80 border border-emerald-500/30 px-3 py-1 rounded-full animate-fade-in shadow-lg">
+              ✓ {timeAddedNotice}
+            </div>
+          )}
         </div>
 
       </main>
@@ -975,6 +1254,112 @@ const FocusSpace = ({
         )}
 
       </footer>
+
+      {/* ── INTERVAL CHECK-IN POP-UP (Adapted Pomodoro Flow) ── */}
+      {showIntervalCheckIn && (
+        <div
+          className="fixed inset-0 z-50 bg-[#0B0D12]/90 backdrop-blur-md text-stone-100 flex items-center justify-center p-4 anim-pop"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Focus Interval Check-In"
+        >
+          <div className="w-full max-w-lg obsidian-liquid-card p-6 sm:p-8 space-y-6 shadow-2xl relative border border-emerald-500/30">
+            {/* Header */}
+            <div className="text-center space-y-2 pb-2 border-b border-slate-800">
+              <span className="text-xs font-mono font-black uppercase tracking-widest text-emerald-400 block">
+                Focus Interval Complete · Cycle {pomodoroCycle} ({targetMinutes}m)
+              </span>
+              <h2 className="font-display font-black text-2xl sm:text-3xl text-white">
+                Is this task finished?
+              </h2>
+              <p className="text-xs text-slate-300 max-w-sm mx-auto font-mono">
+                "{conceptName}"
+              </p>
+            </div>
+
+            {/* Action Choices */}
+            <div className="space-y-3">
+              {/* 1. Finished -> Reflection */}
+              <button
+                type="button"
+                onClick={() => {
+                  setShowIntervalCheckIn(false);
+                  onOpenReflection && onOpenReflection();
+                }}
+                className="w-full p-4 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-left transition-all shadow-lg shadow-emerald-500/20 group flex items-start gap-3.5 cursor-pointer"
+              >
+                <div className="w-9 h-9 rounded-xl bg-slate-950/20 flex items-center justify-center flex-shrink-0 mt-0.5 text-slate-950">
+                  <CheckCircle2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="font-display font-black text-sm tracking-wide">
+                    Yes, Task is Finished
+                  </div>
+                  <div className="text-xs text-slate-900 font-sans font-medium mt-0.5">
+                    Log what changed in your understanding and commit evidence to roadmap.
+                  </div>
+                </div>
+              </button>
+
+              {/* 2. Take a Break */}
+              <button
+                type="button"
+                onClick={() => {
+                  setShowIntervalCheckIn(false);
+                  completedOnceRef.current = false;
+                  onStartBreak && onStartBreak(breakDurationMinutes || 5);
+                }}
+                className="w-full p-4 rounded-2xl bg-slate-900 hover:bg-slate-850 border border-cyan-500/40 text-left transition-all text-slate-200 group flex items-start gap-3.5 cursor-pointer"
+              >
+                <div className="w-9 h-9 rounded-xl bg-cyan-500/20 text-cyan-300 flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <Coffee className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="font-display font-bold text-sm text-cyan-300">
+                    Take a Restorative Break ({breakDurationMinutes || 5}m)
+                  </div>
+                  <div className="text-xs text-slate-400 font-sans mt-0.5">
+                    Step away, recharge, and return to this exact same task for Cycle {pomodoroCycle + 1}.
+                  </div>
+                </div>
+              </button>
+
+              {/* 3. Add more time to same task without break */}
+              <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800 space-y-2.5">
+                <div className="flex items-center justify-between text-xs font-mono font-bold text-slate-300">
+                  <span className="flex items-center gap-1.5">
+                    <Zap className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Not finished yet — add more time:</span>
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleAddTime(10)}
+                    className="py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-mono font-bold text-slate-200 border border-slate-700 hover:border-slate-600 transition-colors cursor-pointer"
+                  >
+                    +10 Min
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleAddTime(15)}
+                    className="py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-mono font-bold text-slate-200 border border-slate-700 hover:border-slate-600 transition-colors cursor-pointer"
+                  >
+                    +15 Min
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleAddTime(25)}
+                    className="py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-mono font-bold text-amber-300 border border-amber-500/40 hover:border-amber-500 transition-colors cursor-pointer"
+                  >
+                    +25 Min Block
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

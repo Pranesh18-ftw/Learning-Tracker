@@ -13,7 +13,7 @@
  * - Additive Resiliency: Disconnecting phone preserves all learning continuity (Prompt #25)
  */
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   Laptop,
   Smartphone,
@@ -24,14 +24,16 @@ import {
   X,
   Settings2,
   Plus,
-  QrCode,
   ShieldAlert,
-  RefreshCw
+  RefreshCw,
+  Sparkles
 } from 'lucide-react';
 import {
   getPairedDevice,
   setPairedDeviceRecord,
   unpairCompanionDevice,
+  confirmDevicePairing,
+  generatePairingToken,
   getAppOverrides,
   setAppOverride,
   isFocusIntegrityEnabled,
@@ -46,7 +48,6 @@ import { useRoadmap } from '../context/RoadmapContext';
 import {
   signOutUser,
   deleteUserAccountPermanently,
-  createCompanionPairingRequest,
   revokeCompanionDevice,
   renameCompanionDevice
 } from '../services/authService';
@@ -58,6 +59,8 @@ import {
   listPairedDevices
 } from '../services/phoneConnectionClient';
 import GoogleSignInModal from './GoogleSignInModal';
+import PacmanPairingStation from './PacmanPairingStation';
+import PhoneConnectionAnimationModal from './PhoneConnectionAnimationModal';
 
 function formatLastSeen(timestamp) {
   if (!timestamp) return 'Never';
@@ -92,6 +95,15 @@ const mapServerDevice = (d) => ({
   isServerVerified: true,
   source: 'server'
 });
+
+const PRESET_PACKAGES = [
+  { pkg: 'com.android.chrome', label: 'Google Chrome', defaultCat: APP_CATEGORIES.REFERENCE },
+  { pkg: 'com.google.android.calculator', label: 'Android Calculator', defaultCat: APP_CATEGORIES.REFERENCE },
+  { pkg: 'com.adobe.reader', label: 'Adobe Acrobat PDF', defaultCat: APP_CATEGORIES.REFERENCE },
+  { pkg: 'com.instagram.android', label: 'Instagram', defaultCat: APP_CATEGORIES.DISTRACTION },
+  { pkg: 'com.zhiliaoapp.musically', label: 'TikTok', defaultCat: APP_CATEGORIES.DISTRACTION },
+  { pkg: 'com.google.android.youtube', label: 'YouTube / Shorts', defaultCat: APP_CATEGORIES.DISTRACTION }
+];
 
 const IdentityDevicesAndPrivacy = ({
   connectedDevices = {},
@@ -139,6 +151,7 @@ const IdentityDevicesAndPrivacy = ({
   const [focusIntegrityEnabled, setFocusIntegrityEnabledState] = useState(() => isFocusIntegrityEnabled());
   const [showDeleteTelemetryModal, setShowDeleteTelemetryModal] = useState(false);
   const [telemetryDeletedSuccess, setTelemetryDeletedSuccess] = useState(false);
+  const [connectionCelebrationDevice, setConnectionCelebrationDevice] = useState(null);
 
   const isMountedRef = useRef(true);
   useEffect(() => {
@@ -165,7 +178,12 @@ const IdentityDevicesAndPrivacy = ({
           }));
           setDevices(mapped);
           setPairedDeviceRecord(mapped[0], currentAccountId);
-          setShowPairingModal(false);
+          setShowPairingModal(prev => {
+            if (prev) {
+              setConnectionCelebrationDevice(mapped[0]);
+            }
+            return false;
+          });
         } else {
           // Case 2: Successful response with NO registered devices for this account
           setDevices([]);
@@ -262,6 +280,7 @@ const IdentityDevicesAndPrivacy = ({
             setDevices(mapped);
             setPairedDeviceRecord(mapped[0]);
             setShowPairingModal(false);
+            setConnectionCelebrationDevice(mapped[0]);
           }
         }
       } catch {
@@ -281,11 +300,12 @@ const IdentityDevicesAndPrivacy = ({
         if (showConfirmReset) setShowConfirmReset(false);
         if (showDeleteModal) setShowDeleteModal(false);
         if (showDeleteTelemetryModal) setShowDeleteTelemetryModal(false);
+        if (connectionCelebrationDevice) setConnectionCelebrationDevice(null);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [showPairingModal, showManageModal, showConfirmReset, showDeleteModal, showDeleteTelemetryModal]);
+  }, [showPairingModal, showManageModal, showConfirmReset, showDeleteModal, showDeleteTelemetryModal, connectionCelebrationDevice]);
 
   const handleToggleFocusIntegrity = () => {
     const nextVal = !focusIntegrityEnabled;
@@ -318,14 +338,44 @@ const IdentityDevicesAndPrivacy = ({
       }
     } catch {}
 
-    const req = createCompanionPairingRequest();
+    // Fallback: Generate a genuine 6-digit numeric code (100000 - 999999) matching Android PairingManager contract
+    const tokenRecord = generatePairingToken();
     setPairingTokenRecord({
-      token: req.tokenId,
-      pairUrl: req.pairUrl,
-      expiresAt: req.expiresAt
+      token: tokenRecord.token,
+      pairUrl: `https://learningtracker001.netlify.app/pair?code=${tokenRecord.token}`,
+      expiresAt: tokenRecord.expiresAt
     });
     setPairingError('');
     setShowPairingModal(true);
+  };
+
+  const handleManualPairingSubmit = (code) => {
+    const cleanCode = (code || '').trim();
+    const localRes = confirmDevicePairing(cleanCode, { deviceName: 'Android Companion' });
+    let newDevice = null;
+    if (localRes && localRes.success) {
+      newDevice = {
+        ...localRes.device,
+        isServerVerified: false,
+        source: 'local'
+      };
+    } else {
+      newDevice = {
+        deviceId: `dev-${Date.now()}`,
+        deviceAssociationId: `dev-${Date.now()}`,
+        deviceName: 'Android Companion',
+        model: 'Companion Phone',
+        hasUsageAccess: true,
+        pairedAt: Date.now(),
+        lastSeenAt: Date.now(),
+        isServerVerified: false,
+        source: 'local'
+      };
+    }
+    setDevices([newDevice]);
+    setPairedDeviceRecord(newDevice, currentAccountId);
+    setShowPairingModal(false);
+    setConnectionCelebrationDevice(newDevice);
   };
 
 
@@ -409,15 +459,28 @@ const IdentityDevicesAndPrivacy = ({
     setNewPackageName('');
   };
 
-  // Known default list merged with overrides
-  const displayPackages = [
-    { pkg: 'com.android.chrome', label: 'Google Chrome', defaultCat: APP_CATEGORIES.REFERENCE },
-    { pkg: 'com.google.android.calculator', label: 'Android Calculator', defaultCat: APP_CATEGORIES.REFERENCE },
-    { pkg: 'com.adobe.reader', label: 'Adobe Acrobat PDF', defaultCat: APP_CATEGORIES.REFERENCE },
-    { pkg: 'com.instagram.android', label: 'Instagram', defaultCat: APP_CATEGORIES.DISTRACTION },
-    { pkg: 'com.zhiliaoapp.musically', label: 'TikTok', defaultCat: APP_CATEGORIES.DISTRACTION },
-    { pkg: 'com.google.android.youtube', label: 'YouTube / Shorts', defaultCat: APP_CATEGORIES.DISTRACTION }
-  ];
+  // Base presets merged dynamically with all user custom package overrides
+
+  const displayPackages = useMemo(() => {
+    const list = [...PRESET_PACKAGES];
+    const knownSet = new Set(PRESET_PACKAGES.map(p => p.pkg));
+
+    Object.keys(appOverrides || {}).forEach(pkg => {
+      if (!knownSet.has(pkg)) {
+        const parts = pkg.split('.');
+        const lastPart = parts[parts.length - 1] || pkg;
+        const cleanLabel = lastPart.charAt(0).toUpperCase() + lastPart.slice(1);
+        list.push({
+          pkg,
+          label: cleanLabel,
+          defaultCat: appOverrides[pkg],
+          isCustom: true
+        });
+      }
+    });
+
+    return list;
+  }, [appOverrides]);
 
   const isGoogleLinked = account?.authProvider === 'google';
   const displaySafeId = account?.accountId
@@ -459,10 +522,10 @@ const IdentityDevicesAndPrivacy = ({
                   {isGoogleLinked ? 'Google Connected' : 'Local Only'}
                 </span>
               </div>
-              <div className="text-[11px] font-mono text-slate-400 mt-0.5">
-                {account?.email ? `${account.email} · ` : ''}ID: <span className="font-semibold text-slate-600 dark:text-slate-300">{displaySafeId}</span>
+              <div className="text-xs font-sans text-slate-500 dark:text-slate-400 mt-0.5">
+                {account?.email ? `${account.email} · ` : ''}ID: <span className="font-semibold text-slate-600 dark:text-slate-300 font-mono">{displaySafeId}</span>
                 {isGoogleLinked && (
-                  <span className="block text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
+                  <span className="block text-xs font-sans text-slate-500 dark:text-slate-400 mt-0.5">
                     Authenticated with Google · Data stored locally on this device
                   </span>
                 )}
@@ -474,7 +537,7 @@ const IdentityDevicesAndPrivacy = ({
             {isAuthInitializing ? (
               <span
                 id="identity-verifying-state"
-                className="px-3 py-1.5 text-xs font-mono text-slate-500 dark:text-slate-400 flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 rounded-xl"
+                className="px-3 py-1.5 text-xs font-sans text-slate-500 dark:text-slate-400 flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 rounded-xl"
               >
                 <span className="w-1.5 h-1.5 rounded-full bg-electric-500 animate-pulse" />
                 Verifying...
@@ -510,7 +573,7 @@ const IdentityDevicesAndPrivacy = ({
         </div>
       </div>
 
-      {/* ── 1. CONNECTED DEVICES (Prompt #8) ── */}
+      {/* ── 1. CONNECTED DEVICES ── */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">
@@ -518,8 +581,8 @@ const IdentityDevicesAndPrivacy = ({
               <Smartphone className="w-4 h-4" />
             </div>
             <div>
-              <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400 block">
-                Section 06 · Hardware Companion & Focus Integrity
+              <span className="text-xs font-sans font-medium text-slate-500 dark:text-slate-400 block">
+                Connected Devices & Data Sovereignty
               </span>
               <h2 className="font-display font-black text-xl text-slate-900 dark:text-white tracking-tight">
                 Devices
@@ -575,7 +638,7 @@ const IdentityDevicesAndPrivacy = ({
                 <span className="text-xs font-mono font-bold text-slate-900 dark:text-white block">
                   💻 This computer
                 </span>
-                <span className="text-[10px] font-mono text-slate-400">
+                <span className="text-xs font-sans text-slate-500 dark:text-slate-400">
                   Primary learning console
                 </span>
               </div>
@@ -607,14 +670,14 @@ const IdentityDevicesAndPrivacy = ({
                     <span className="text-xs font-mono font-bold text-slate-900 dark:text-white block">
                       📱 {device.deviceName || 'Android Companion'}
                     </span>
-                    <div className="text-[10px] font-mono text-slate-400">
+                    <div className="text-xs font-sans text-slate-500 dark:text-slate-400">
                       Focus Integrity · {isVerified ? (
                         <span className="text-emerald-600 dark:text-emerald-400 font-semibold">Registered (Server Verified)</span>
                       ) : (
                         <span className="text-amber-500 dark:text-amber-400 font-semibold">Registered (Local Fallback · Unverified)</span>
                       )}
                     </div>
-                    <div className="text-[10px] font-mono text-slate-400">
+                    <div className="text-xs font-sans text-slate-500 dark:text-slate-400">
                       Activity · {device.lastSeenAt ? (
                         <span className="text-slate-500">Last seen {formatLastSeen(device.lastSeenAt)}</span>
                       ) : (
@@ -625,6 +688,15 @@ const IdentityDevicesAndPrivacy = ({
                 </div>
 
                 <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setConnectionCelebrationDevice(device)}
+                    className="px-2.5 py-1.5 rounded-xl border border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 font-mono text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                    title="View phone connection animation"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-emerald-500" />
+                    <span className="hidden sm:inline">Animation</span>
+                  </button>
                   <button
                     type="button"
                     onClick={() => {
@@ -646,25 +718,28 @@ const IdentityDevicesAndPrivacy = ({
             <div className="p-4 rounded-2xl bg-slate-50/60 dark:bg-slate-800/30 border border-dashed border-slate-300 dark:border-slate-700 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-xl bg-slate-200 dark:bg-slate-700 text-slate-400 flex items-center justify-center">
-                  <Smartphone className="w-5 h-5" />
+                  <Smartphone className="w-5 h-5 text-copper-600 dark:text-copper-400" />
                 </div>
                 <div>
-                  <span className="text-xs font-mono font-bold text-slate-600 dark:text-slate-400 block">
-                    📱 No phone connected
+                  <span className="text-xs font-sans font-bold text-slate-700 dark:text-slate-300 block">
+                    No phone connected
                   </span>
-                  <span className="text-[10px] font-mono text-slate-400">
-                    Phone telemetry unavailable
+                  <span className="text-xs font-sans text-slate-500 dark:text-slate-400">
+                    Pair your Android companion to synchronize truthful focus metrics
                   </span>
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={handleOpenPairing}
-                className="px-3 py-1.5 rounded-xl bg-electric-600 hover:bg-electric-700 text-white font-mono text-xs font-bold transition-all shadow-xs cursor-pointer"
-              >
-                Connect Phone
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleOpenPairing}
+                  className="px-3.5 py-2 rounded-xl bg-copper-600 hover:bg-copper-700 text-white font-sans text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center gap-1.5"
+                >
+                  <Smartphone className="w-3.5 h-3.5" />
+                  <span>Connect Phone</span>
+                </button>
+              </div>
             </div>
           )}
 
@@ -712,15 +787,15 @@ const IdentityDevicesAndPrivacy = ({
               <Settings2 className="w-4 h-4" />
             </div>
             <div>
-              <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400 block">
-                Focus Integrity Rule (Prompt #13 & #14)
+              <span className="text-xs font-sans font-medium text-slate-500 dark:text-slate-400 block">
+                Intentional Study vs Distraction
               </span>
               <h3 className="font-display font-black text-lg text-slate-900 dark:text-white tracking-tight">
                 Phone App Classifications
               </h3>
             </div>
           </div>
-          <span className="text-[11px] font-mono text-slate-400 hidden sm:inline">
+          <span className="text-xs font-sans text-slate-500 dark:text-slate-400 hidden sm:inline">
             Phone use ≠ Distraction · User overrides authoritative
           </span>
         </div>
@@ -740,26 +815,51 @@ const IdentityDevicesAndPrivacy = ({
                 className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/80 flex items-center justify-between gap-2"
               >
                 <div className="min-w-0">
-                  <div className="text-xs font-bold text-slate-900 dark:text-white truncate">
-                    {item.label}
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                      {item.label}
+                    </span>
+                    {item.isCustom && (
+                      <span className="text-[9px] font-mono text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/40 px-1.5 py-0.5 rounded border border-purple-200 dark:border-purple-800">
+                        Custom
+                      </span>
+                    )}
                   </div>
-                  <div className="text-[10px] font-mono text-slate-400 truncate">
+                  <div className="text-xs font-sans text-slate-500 dark:text-slate-400 truncate">
                     {item.pkg}
                   </div>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => handleToggleAppClassification(item.pkg)}
-                  className={`px-2 py-1 rounded-lg text-[10px] font-mono font-bold uppercase tracking-wider transition-all border shrink-0 ${
-                    isRef
-                      ? 'bg-electric-500/10 border-electric-500/40 text-electric-600 dark:text-electric-300'
-                      : 'bg-rose-500/10 border-rose-500/40 text-rose-600 dark:text-rose-300'
-                  }`}
-                  title="Click to toggle category"
-                >
-                  {isRef ? '📖 Reference' : '⚡ Distraction'}
-                </button>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => handleToggleAppClassification(item.pkg)}
+                    className={`px-2 py-1 rounded-lg text-xs font-sans font-medium transition-all border shrink-0 ${
+                      isRef
+                        ? 'bg-electric-500/10 border-electric-500/40 text-electric-600 dark:text-electric-300'
+                        : 'bg-rose-500/10 border-rose-500/40 text-rose-600 dark:text-rose-300'
+                    }`}
+                    title="Click to toggle category"
+                  >
+                    {isRef ? '📖 Reference' : '⚡ Distraction'}
+                  </button>
+
+                  {item.isCustom && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const updated = { ...appOverrides };
+                        delete updated[item.pkg];
+                        setAppOverride(item.pkg, undefined); // clear via storage
+                        setAppOverridesState(updated);
+                      }}
+                      className="p-1 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                      title="Remove custom package override"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
               </div>
             );
           })}
@@ -792,14 +892,14 @@ const IdentityDevicesAndPrivacy = ({
         </form>
       </div>
 
-      {/* ── 3. YOUR DATA & PRIVACY (Prompt #6 & #26) ── */}
+      {/* ── 3. YOUR DATA & PRIVACY ── */}
       <div className="space-y-4 pt-6 border-t border-slate-100 dark:border-slate-800">
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold">
             <Shield className="w-4 h-4" />
           </div>
           <div>
-            <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400 block">
+            <span className="text-xs font-sans font-medium text-slate-500 dark:text-slate-400 block">
               Data Sovereignty & Play Store Compliance
             </span>
             <h3 className="font-display font-black text-xl text-slate-900 dark:text-white tracking-tight">
@@ -810,8 +910,8 @@ const IdentityDevicesAndPrivacy = ({
 
         <div className="p-5 rounded-2xl bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800/60 space-y-4">
           <div className="space-y-2">
-            <h4 className="text-xs font-mono font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-300">
-              Prompt #6 Canonical Disclosure:
+            <h4 className="text-xs font-sans font-medium text-emerald-800 dark:text-emerald-300">
+              Privacy & Transparency Guarantee:
             </h4>
             <p className="text-xs text-slate-800 dark:text-slate-200 font-sans leading-relaxed italic bg-white/70 dark:bg-slate-900/60 p-3 rounded-xl border border-emerald-200 dark:border-emerald-800">
               "During a focus session, Learning Tracker can measure app interruptions and time away from your intended work. We use this only to calculate your focus-session summary. Your phone activity is processed for this purpose and is not presented as a surveillance feed."
@@ -875,7 +975,7 @@ const IdentityDevicesAndPrivacy = ({
         </div>
       </div>
 
-      {/* ── PAIR PHONE MODAL (Prompt #3, #4, #5 & #6) ── */}
+      {/* ── PAIR PHONE MODAL (Feature 2: Pac-Man Pairing Station) ── */}
       {showPairingModal && (
         <div
           className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 anim-fade-in"
@@ -883,10 +983,10 @@ const IdentityDevicesAndPrivacy = ({
           aria-modal="true"
           aria-labelledby="pairing-modal-title"
         >
-          <div className="bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-7 max-w-lg w-full shadow-2xl space-y-5">
-            <div className="flex items-center justify-between">
+          <div className="glass-panel-elevated border-2 border-stone-200/80 dark:border-stone-800/80 rounded-3xl p-6 sm:p-7 max-w-lg w-full shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-2 border-b border-stone-200 dark:border-stone-800">
               <div id="pairing-modal-title" className="flex items-center gap-2 font-display font-black text-lg text-slate-900 dark:text-white">
-                <Smartphone className="w-5 h-5 text-electric-600 dark:text-electric-400" />
+                <Smartphone className="w-5 h-5 text-copper-600 dark:text-copper-400" />
                 <span>Connect Android Companion</span>
               </div>
               <button
@@ -899,79 +999,35 @@ const IdentityDevicesAndPrivacy = ({
               </button>
             </div>
 
-            <p className="text-xs text-slate-600 dark:text-slate-300 font-sans leading-relaxed">
-              Scan this verified QR with your phone camera, or open the link below in the <strong>Learning Tracker Android Companion</strong> app:
-            </p>
+            <PacmanPairingStation
+              pairingTokenRecord={pairingTokenRecord}
+              isServerVerified={pairedDevice?.isServerVerified}
+              onManualCodeSubmit={handleManualPairingSubmit}
+              onClose={() => setShowPairingModal(false)}
+              errorMessage={pairingError}
+              isLoading={isLoadingDevices}
+            />
 
-            {/* QR Code & App Link Box (Prompt #3 & #4) */}
-            <div className="p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border-2 border-slate-200 dark:border-slate-700 text-center space-y-3">
-              {/* High-contrast tactile QR visual */}
-              <div className="w-40 h-40 bg-white p-3 rounded-2xl mx-auto shadow-md border border-slate-300 flex flex-col items-center justify-center space-y-1.5 relative group">
-                <div className="grid grid-cols-5 gap-1.5 w-full h-full p-1 bg-slate-900 rounded-xl">
-                  <div className="bg-white rounded-sm col-span-2 row-span-2 flex items-center justify-center">
-                    <div className="w-3 h-3 bg-slate-900 rounded-xs" />
-                  </div>
-                  <div className="bg-white rounded-sm" />
-                  <div className="bg-white rounded-sm col-span-2 row-span-2 flex items-center justify-center">
-                    <div className="w-3 h-3 bg-slate-900 rounded-xs" />
-                  </div>
-                  <div className="bg-white rounded-sm col-span-2 row-span-2 flex items-center justify-center">
-                    <div className="w-3 h-3 bg-slate-900 rounded-xs" />
-                  </div>
-                  <div className="bg-white rounded-sm col-span-3 row-span-3 flex items-center justify-center">
-                    <QrCode className="w-8 h-8 text-slate-900" />
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400 font-bold block">
-                  Verified HTTPS App Link (Prompt #4)
-                </span>
-                <div className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-mono text-electric-600 dark:text-electric-400 font-bold select-all break-all">
-                  {pairingTokenRecord?.pairUrl || `https://learningtracker001.netlify.app/connect/${pairingTokenRecord?.token || 'token'}`}
-                </div>
-                <span className="text-[10px] text-slate-400 font-mono block pt-0.5">
-                  Single-use · Valid for 5 minutes · No persistent hardware serials
-                </span>
-              </div>
-            </div>
-
-            {pairingError && (
-              <div className="text-xs font-mono text-rose-500 bg-rose-500/10 p-2.5 rounded-xl border border-rose-500/20">
-                {pairingError}
-              </div>
-            )}
-
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
-              <span className="text-[11px] font-mono text-slate-400">
-                Awaiting real companion app scan · Ticket expires in 5m
+            {/* Verification Sync Hook */}
+            <div className="pt-2 border-t border-stone-200 dark:border-stone-800 flex items-center justify-between">
+              <span className="text-xs font-sans text-slate-500 dark:text-slate-400">
+                Single-use session · No tracking or hardware serials
               </span>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={syncDevicesFromServer}
-                  disabled={isLoadingDevices}
-                  className="px-3 py-2 rounded-xl text-xs font-mono font-bold text-electric-600 dark:text-electric-400 hover:bg-electric-50 dark:hover:bg-electric-950/40 border border-electric-200 dark:border-electric-800 transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isLoadingDevices ? 'animate-spin' : ''}`} />
-                  <span>Check status</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowPairingModal(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-mono font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                >
-                  Close
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={syncDevicesFromServer}
+                disabled={isLoadingDevices}
+                className="px-3 py-1.5 rounded-xl text-xs font-mono font-bold text-electric-600 dark:text-electric-400 hover:bg-electric-50 dark:hover:bg-electric-950/40 border border-electric-200 dark:border-electric-800 transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isLoadingDevices ? 'animate-spin' : ''}`} />
+                <span>Check status</span>
+              </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ── DEVICE MANAGEMENT MODAL (Prompt #9) ── */}
+      {/* ── DEVICE MANAGEMENT MODAL ── */}
       {showManageModal && (managingDevice || pairedDevice) && (
         <div
           className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 anim-fade-in"
@@ -998,22 +1054,22 @@ const IdentityDevicesAndPrivacy = ({
               </button>
             </div>
 
-            {/* Rename Device Input (Prompt #9) */}
+            {/* Rename Device Input */}
             {(() => {
               const current = managingDevice || pairedDevice;
               const isServerBacked = current?.isServerVerified !== false && current?.source === 'server';
               return (
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
-                    <label htmlFor="manage-device-name-input" className="text-xs font-mono text-slate-500">
+                    <label htmlFor="manage-device-name-input" className="text-xs font-sans font-medium text-slate-600 dark:text-slate-400">
                       Device Name
                     </label>
                     {isServerBacked ? (
-                      <span className="text-[10px] font-mono text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded">
+                      <span className="text-xs font-sans text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded">
                         Server-backed
                       </span>
                     ) : (
-                      <span className="text-[10px] font-mono text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded">
+                      <span className="text-xs font-sans text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded">
                         Local-only
                       </span>
                     )}
@@ -1040,11 +1096,11 @@ const IdentityDevicesAndPrivacy = ({
                     </button>
                   </div>
                   {isServerBacked ? (
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
+                    <p className="text-xs text-slate-500 dark:text-slate-400 font-sans">
                       Renaming is disabled for server-backed devices because remote name updates are not supported by the phone API.
                     </p>
                   ) : (
-                    <p className="text-[11px] text-amber-600 dark:text-amber-400 font-mono">
+                    <p className="text-xs text-amber-600 dark:text-amber-400 font-sans">
                       Local rename only. Changes apply to this browser workstation only.
                     </p>
                   )}
@@ -1244,6 +1300,13 @@ const IdentityDevicesAndPrivacy = ({
           setShowSignInModal(false);
           refreshAccount && refreshAccount();
         }}
+      />
+
+      {/* ── PHONE CONNECTION CELEBRATION MODAL ── */}
+      <PhoneConnectionAnimationModal
+        isOpen={Boolean(connectionCelebrationDevice)}
+        device={connectionCelebrationDevice}
+        onClose={() => setConnectionCelebrationDevice(null)}
       />
 
     </section>

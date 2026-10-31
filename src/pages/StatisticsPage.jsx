@@ -247,18 +247,18 @@ const StatisticsPage = () => {
            VIEW 2: ACTIVITY ARCHIVE ("WHAT HAVE I DONE?")
            Historical logs, weekly hours, and raw task metrics
            ═══════════════════════════════════════════════════════════════ */
-        <div className="space-y-8 anim-fade-in">
+        <div className="space-y-8 anim-entrance-1">
 
-          <div className="bg-slate-100 dark:bg-slate-800/60 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 flex items-center justify-between text-xs font-mono">
-            <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300">
-              <Archive className="w-4 h-4 text-slate-500" />
+          <div className="bg-stone-100 dark:bg-[#1F1D1B] p-4 rounded-2xl border border-stone-200 dark:border-[#2A2725] flex items-center justify-between text-xs font-mono">
+            <div className="flex items-center gap-2 text-stone-700 dark:text-stone-300">
+              <Archive className="w-4 h-4 text-stone-500" />
               <span>
                 Activity Archive preserves historical time records and numerical task tallies.
               </span>
             </div>
             <button
               onClick={() => setViewMode('growth')}
-              className="text-emerald-600 dark:text-emerald-400 font-bold hover:underline"
+              className="text-[#4D6B58] dark:text-[#5F826D] font-bold hover:underline cursor-pointer"
             >
               ← Return to Growth Mirror
             </button>
@@ -266,43 +266,43 @@ const StatisticsPage = () => {
 
           {/* Key Numerical Metrics */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <div className="bg-white dark:bg-slate-900 rounded-3xl border-2 border-slate-200 dark:border-slate-800 p-6 shadow-sm">
+            <div className="card-workbench bg-white dark:bg-[#1F1D1B] rounded-3xl border border-stone-200 dark:border-[#2A2725] p-6 shadow-sm">
               <div className="flex items-center justify-between mb-4">
-                <Flame className="w-8 h-8 text-orange-500" />
-                <span className="text-2xl font-black text-slate-800 dark:text-white font-mono">{streak}</span>
+                <Flame className="w-8 h-8 text-[#C25524]" />
+                <span className="text-2xl font-black text-[#141312] dark:text-[#FAF8F5] font-mono">{streak}</span>
               </div>
-              <div className="text-sm font-bold text-slate-600 dark:text-slate-400">Learning Streak (days)</div>
+              <div className="text-xs font-mono uppercase tracking-wider font-bold text-stone-500 dark:text-stone-400">Learning Streak (days)</div>
             </div>
 
-            <div className="bg-white dark:bg-slate-900 rounded-3xl border-2 border-slate-200 dark:border-slate-800 p-6 shadow-sm">
+            <div className="card-workbench bg-white dark:bg-[#1F1D1B] rounded-3xl border border-stone-200 dark:border-[#2A2725] p-6 shadow-sm">
               <div className="flex items-center gap-4 mb-4">
-                <Clock className="w-8 h-8 text-blue-500" />
-                <span className="text-2xl font-black text-slate-800 dark:text-white font-mono">{totalHours}h {totalMinutes}m</span>
+                <Clock className="w-8 h-8 text-[#3B5571] dark:text-[#486581]" />
+                <span className="text-2xl font-black text-[#141312] dark:text-[#FAF8F5] font-mono">{totalHours}h {totalMinutes}m</span>
               </div>
-              <div className="text-sm font-bold text-slate-600 dark:text-slate-400">Total Study Time</div>
+              <div className="text-xs font-mono uppercase tracking-wider font-bold text-stone-500 dark:text-stone-400">Total Study Time</div>
             </div>
 
-            <div className="bg-white dark:bg-slate-900 rounded-3xl border-2 border-slate-200 dark:border-slate-800 p-6 shadow-sm">
+            <div className="card-workbench bg-white dark:bg-[#1F1D1B] rounded-3xl border border-stone-200 dark:border-[#2A2725] p-6 shadow-sm">
               <div className="flex items-center justify-between mb-4">
-                <Target className="w-8 h-8 text-green-500" />
-                <span className="text-2xl font-black text-slate-800 dark:text-white font-mono">{stats.completedSubtasks}</span>
+                <Target className="w-8 h-8 text-[#4D6B58] dark:text-[#5F826D]" />
+                <span className="text-2xl font-black text-[#141312] dark:text-[#FAF8F5] font-mono">{stats.completedSubtasks}</span>
               </div>
-              <div className="text-sm font-bold text-slate-600 dark:text-slate-400">Completed Tasks</div>
+              <div className="text-xs font-mono uppercase tracking-wider font-bold text-stone-500 dark:text-stone-400">Completed Tasks</div>
             </div>
 
-            <div className="bg-white dark:bg-slate-900 rounded-3xl border-2 border-slate-200 dark:border-slate-800 p-6 shadow-sm">
+            <div className="card-workbench bg-white dark:bg-[#1F1D1B] rounded-3xl border border-stone-200 dark:border-[#2A2725] p-6 shadow-sm">
               <div className="flex items-center justify-between mb-4">
-                <TrendingUp className="w-8 h-8 text-purple-500" />
-                <span className="text-2xl font-black text-slate-800 dark:text-white font-mono">{stats.completionRate}%</span>
+                <TrendingUp className="w-8 h-8 text-[#8E5B8E]" />
+                <span className="text-2xl font-black text-[#141312] dark:text-[#FAF8F5] font-mono">{stats.completionRate}%</span>
               </div>
-              <div className="text-sm font-bold text-slate-600 dark:text-slate-400">Completion Rate</div>
+              <div className="text-xs font-mono uppercase tracking-wider font-bold text-stone-500 dark:text-stone-400">Completion Rate</div>
             </div>
           </div>
 
           {/* Daily Goals Section */}
-          <div className="bg-white dark:bg-slate-900 rounded-3xl border-2 border-slate-200 dark:border-slate-800 p-6 shadow-sm">
-            <h2 className="text-xl font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
-              <Target className="w-6 h-6 text-indigo-500" />
+          <div className="card-workbench bg-white dark:bg-[#1F1D1B] rounded-3xl border border-stone-200 dark:border-[#2A2725] p-6 shadow-sm">
+            <h2 className="text-xl font-bold text-[#141312] dark:text-[#FAF8F5] mb-4 flex items-center gap-2">
+              <Target className="w-6 h-6 text-[#3B5571]" />
               Daily Goal Performance
             </h2>
 

@@ -14,6 +14,7 @@
  */
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Search, X, Zap, Map, Compass, Award, Target, ArrowRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useRoadmap } from '../context/RoadmapContext';
@@ -145,6 +146,17 @@ const GlobalCommandPalette = ({ isOpen, onClose }) => {
       });
     });
 
+    // 4. Quick Actions & Direct Tools
+    items.push({
+      id: 'action-ai-roadmap',
+      title: 'Plan & Import Study Roadmap',
+      subtitle: 'Universal AI Bridge · Structured curriculum & milestone roadmap architect',
+      type: 'ACTION',
+      route: '/roadmap',
+      icon: <Compass className="w-4 h-4 text-electric-600 dark:text-electric-400" />,
+      payload: { action: 'open-roadmap-bridge' }
+    });
+
     return items;
   }, [subjects]);
 
@@ -190,7 +202,7 @@ const GlobalCommandPalette = ({ isOpen, onClose }) => {
 
   if (!isOpen) return null;
 
-  return (
+  const paletteContent = (
     <div
       className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-start justify-center p-4 pt-16 sm:pt-24 anim-fade-in"
       role="dialog"
@@ -198,7 +210,7 @@ const GlobalCommandPalette = ({ isOpen, onClose }) => {
       aria-label="Command Palette"
     >
       <div
-        className="bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-800 rounded-3xl max-w-xl w-full shadow-2xl overflow-hidden space-y-0"
+        className="glass-panel-elevated border-2 border-stone-200/80 dark:border-stone-800/80 rounded-3xl max-w-xl w-full shadow-2xl overflow-hidden space-y-0"
         onKeyDown={handleKeyDown}
       >
 
@@ -286,6 +298,8 @@ const GlobalCommandPalette = ({ isOpen, onClose }) => {
       </div>
     </div>
   );
+
+  return typeof document !== 'undefined' ? createPortal(paletteContent, document.body) : paletteContent;
 };
 
 export default GlobalCommandPalette;

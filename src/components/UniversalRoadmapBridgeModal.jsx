@@ -18,7 +18,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   X,
-  Sparkles,
   Copy,
   Check,
   Upload,
@@ -27,6 +26,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   Compass,
+  BookOpen,
   ShieldAlert
 } from 'lucide-react';
 import {
@@ -34,11 +34,18 @@ import {
   LEARNER_LEVEL_LABELS,
   LEARNER_PURPOSES,
   LEARNER_PURPOSE_LABELS,
+  LEARNER_STYLES,
+  LEARNER_STYLE_LABELS,
+  STUDY_RHYTHMS,
+  STUDY_RHYTHM_LABELS,
+  THEORY_PRACTICE_RATIOS,
+  THEORY_PRACTICE_LABELS,
   createLearnerContext
 } from '../services/roadmapBridge/learnerContextModel';
 import {
   generateDeepResearchCharter,
-  generateConversionPrompt
+  generateConversionPrompt,
+  RESEARCH_CHARTER_ENGINES
 } from '../services/roadmapBridge/researchCharter';
 import {
   normalizeRoadmapInput
@@ -57,23 +64,169 @@ const STEPS = {
   IMPORT_CONFIRM: 4
 };
 
+const GOAL_PRESETS = [
+  {
+    label: '⚡ Embedded Systems & Firmware',
+    goal: 'Embedded Systems & Bare-Metal Firmware Engineering',
+    destination: 'Firmware Engineer / Hardware-Software Integration Specialist',
+    targetDeliverables: 'Custom RTOS kernel, CAN & SPI driver stack, Low-power sensor hub firmware',
+    preferredStack: 'C, C++, ARM Cortex-M, FreeRTOS, STM32Cube',
+    learningStyle: 'HANDS_ON',
+    purpose: 'CAREER',
+    currentLevel: 'BEGINNER',
+    targetHorizon: '4-6 months',
+    weeklyHours: 14,
+    studyRhythm: 'DAILY_STANDARD',
+    theoryVsPractice: 'PRACTICE_HEAVY',
+    mustIncludeTopics: 'DMA controllers, Nested interrupt handling, Ring buffers, Memory-mapped registers',
+    priorKnowledge: 'Basic C programming, fundamental circuits',
+    constraints: 'Standard laptop, inexpensive STM32 or ESP32 development board'
+  },
+  {
+    label: '🧠 ML & Frontier AI Systems',
+    goal: 'Deep Learning & Modern AI Systems Architecture',
+    destination: 'AI Research Engineer / ML Infrastructure Builder',
+    targetDeliverables: 'Transformer architecture from scratch, CUDA matrix multiplication kernel, Quantized inference engine',
+    preferredStack: 'Python, PyTorch, C++, CUDA, Triton',
+    learningStyle: 'BALANCED',
+    purpose: 'CAREER',
+    currentLevel: 'INTERMEDIATE',
+    targetHorizon: '6 months',
+    weeklyHours: 15,
+    studyRhythm: 'DAILY_STANDARD',
+    theoryVsPractice: 'BALANCED',
+    mustIncludeTopics: 'Backpropagation calculus, Multi-head attention, KV caching, Mixed precision & INT8/FP8 quantization',
+    priorKnowledge: 'Linear algebra, multivariable calculus, Python fluency',
+    constraints: 'Single GPU workstation or cloud GPU access (Google Colab / RunPod)'
+  },
+  {
+    label: '🦀 Systems & Distributed Engines (Rust)',
+    goal: 'Systems Programming & Distributed Engines with Rust',
+    destination: 'Distributed Systems & Infrastructure Engineer',
+    targetDeliverables: 'Distributed Raft consensus KV database, Async thread-pool engine, High-throughput network server',
+    preferredStack: 'Rust, Tokio, Linux eBPF',
+    learningStyle: 'HANDS_ON',
+    purpose: 'CAREER',
+    currentLevel: 'BEGINNER',
+    targetHorizon: '4-6 months',
+    weeklyHours: 12,
+    studyRhythm: 'DAILY_STANDARD',
+    theoryVsPractice: 'PRACTICE_HEAVY',
+    mustIncludeTopics: 'Ownership & pin mechanics, Raft consensus protocol, Write-ahead logging (WAL), Lock-free concurrency',
+    priorKnowledge: 'General programming experience in any language',
+    constraints: 'Standard development workstation'
+  },
+  {
+    label: '🌐 Scalable Full-Stack Architecture',
+    goal: 'Modern Scalable Full-Stack Engineering',
+    destination: 'Senior Full-Stack Engineer / Technical Lead',
+    targetDeliverables: 'Production SaaS platform with multi-tenant auth, real-time collaboration engine, and CI/CD pipeline',
+    preferredStack: 'TypeScript, React, Node.js / Go, PostgreSQL, Docker',
+    learningStyle: 'BALANCED',
+    purpose: 'CAREER',
+    currentLevel: 'BEGINNER',
+    targetHorizon: '3-5 months',
+    weeklyHours: 12,
+    studyRhythm: 'DAILY_STANDARD',
+    theoryVsPractice: 'PRACTICE_HEAVY',
+    mustIncludeTopics: 'Relational data modeling & indexing, WebSockets, Distributed session auth, Idempotency & distributed transactions',
+    priorKnowledge: 'Basic web concepts, HTML/CSS/JS fundamentals',
+    constraints: 'Standard laptop/PC'
+  },
+  {
+    label: '🎸 Acoustic Guitar Mastery & Fretboard Craft',
+    goal: 'Acoustic Guitar Craft, Fingerstyle Technique & Fretboard Fluency',
+    destination: 'Fluent Acoustic Guitarist & Fingerstyle Arranger',
+    targetDeliverables: 'Clean fingerstyle performance of 3 multi-voice arrangements, Fretboard interval navigation map, Percussive acoustic repertoire',
+    preferredStack: 'Steel-string acoustic guitar, Metronome, Voice memo recorder',
+    learningStyle: 'HANDS_ON',
+    purpose: 'CRAFT',
+    currentLevel: 'BEGINNER',
+    targetHorizon: '3-6 months',
+    weeklyHours: 8,
+    studyRhythm: 'DAILY_MICRO',
+    theoryVsPractice: 'PRACTICE_HEAVY',
+    mustIncludeTopics: 'Thumb-independence alternation, CAGED fretboard visualization, Barre chord pressure economy, Travis picking, Sensory muscle memory',
+    priorKnowledge: 'None required (beginner friendly)',
+    constraints: 'Standard acoustic guitar, no expensive gear required'
+  },
+  {
+    label: '🌌 Topological Quantum Computing & Anyonic Braid Physics',
+    goal: 'Non-Abelian Anyons, Chern-Simons Field Theory & Topological Quantum Memory',
+    destination: 'Theoretical Quantum Information Physicist / Topological Qubit Researcher',
+    targetDeliverables: 'Anyon braid group unitary gate simulator, Kitaev toric code error threshold numerical model, Fractional quantum Hall wavefunctions derivation',
+    preferredStack: 'Python (Qiskit, QuTiP), Julia, LaTeX, Mathematica',
+    learningStyle: 'THEORY_FIRST',
+    purpose: 'RESEARCH',
+    currentLevel: 'ADVANCED',
+    targetHorizon: '6-12 months',
+    weeklyHours: 18,
+    studyRhythm: 'WEEKEND_DEEP_DIVE',
+    theoryVsPractice: 'THEORY_HEAVY',
+    mustIncludeTopics: 'Fibonacci anyons and modular tensor categories, Chern-Simons topological quantum field theory, Majorana zero modes in semiconductor-superconductor nanowires, Fault-tolerant topological braid gate synthesis',
+    priorKnowledge: 'Graduate quantum mechanics, Lie algebras, differential geometry and topology',
+    constraints: 'High-performance compute workstation for tensor network simulations'
+  },
+  {
+    label: '🎨 Systematic Creativity & Cognitive Innovation',
+    goal: 'Creativity, TRIZ & Lateral Problem Formulation',
+    destination: 'Creative Strategist / Systematic Innovation Specialist',
+    targetDeliverables: 'TRIZ contradiction elimination engine, Morphological parameter matrix, Relational analogy framework',
+    preferredStack: 'Cognitive models, First-principles abstraction, Multi-agent dialectical synthesis',
+    learningStyle: 'BALANCED',
+    purpose: 'CRAFT',
+    currentLevel: 'BEGINNER',
+    targetHorizon: '3-6 months',
+    weeklyHours: 10,
+    studyRhythm: 'DAILY_STANDARD',
+    theoryVsPractice: 'BALANCED',
+    mustIncludeTopics: 'Zwicky morphological search, Gentner structure mapping, TRIZ contradiction elimination, Consensual assessment technique',
+    priorKnowledge: 'None required (all disciplines welcome)',
+    constraints: 'Notebook or standard laptop'
+  },
+  {
+    label: '🧠 Cognitive Psychology & Behavioral Science',
+    goal: 'Cognitive Psychology, Heuristics & Decision Architecture',
+    destination: 'Behavioral Scientist / Cognitive Ergonomics Practitioner',
+    targetDeliverables: 'Cognitive bias mitigation protocol, Choice architecture intervention audit, Experimental behavioral trial design',
+    preferredStack: 'Empirical experimentation, Statistical analysis, Observational behavioral mapping',
+    learningStyle: 'BALANCED',
+    purpose: 'ACADEMIC',
+    currentLevel: 'BEGINNER',
+    targetHorizon: '3-6 months',
+    weeklyHours: 10,
+    studyRhythm: 'DAILY_STANDARD',
+    theoryVsPractice: 'BALANCED',
+    mustIncludeTopics: 'Dual-process theory (System 1/2), Working memory capacity, Heuristics and biases, Mental models and boundary conditions',
+    priorKnowledge: 'None required',
+    constraints: 'Standard laptop'
+  }
+];
+
 const UniversalRoadmapBridgeModal = ({
   isOpen,
   onClose,
   onImport,
-  existingRoadmapCount = 0
+  existingRoadmapCount = 0,
+  initialStep = STEPS.INTENT
 }) => {
   const containerRef = useRef(null);
 
   // Modal Step State
-  const [currentStep, setCurrentStep] = useState(STEPS.INTENT);
+  const [currentStep, setCurrentStep] = useState(initialStep || STEPS.INTENT);
 
   // Step 1: Learner Context State
   const [goal, setGoal] = useState('');
   const [destination, setDestination] = useState('');
+  const [targetDeliverables, setTargetDeliverables] = useState('');
   const [currentLevel, setCurrentLevel] = useState(LEARNER_LEVELS.BEGINNER);
   const [purpose, setPurpose] = useState(LEARNER_PURPOSES.CAREER);
+  const [learningStyle, setLearningStyle] = useState(LEARNER_STYLES.BALANCED);
+  const [preferredStack, setPreferredStack] = useState('');
   const [targetHorizon, setTargetHorizon] = useState('3-6 months');
+  const [studyRhythm, setStudyRhythm] = useState(STUDY_RHYTHMS.DAILY_STANDARD);
+  const [theoryVsPractice, setTheoryVsPractice] = useState(THEORY_PRACTICE_RATIOS.BALANCED);
+  const [mustIncludeTopics, setMustIncludeTopics] = useState('');
   const [weeklyHours, setWeeklyHours] = useState(10);
   const [constraints, setConstraints] = useState('');
   const [priorKnowledge, setPriorKnowledge] = useState('');
@@ -89,6 +242,9 @@ const UniversalRoadmapBridgeModal = ({
   const [importMode, setImportMode] = useState('append'); // 'append' | 'replace'
   const [importError, setImportError] = useState(null);
 
+  // Target AI Engine / Prompt Profile: Universal v3.0 (Claude/GPT/DeepSeek) vs Gemini Compact
+  const [selectedEngine, setSelectedEngine] = useState(RESEARCH_CHARTER_ENGINES.UNIVERSAL_V3);
+
   // Dialog Accessibility (Focus trap, Escape key)
   useDialogA11y({
     isOpen,
@@ -99,29 +255,50 @@ const UniversalRoadmapBridgeModal = ({
   // Reset or initialize on open
   useEffect(() => {
     if (isOpen) {
-      setCurrentStep(STEPS.INTENT);
+      setCurrentStep(initialStep || STEPS.INTENT);
       setImportError(null);
     }
-  }, [isOpen]);
+  }, [isOpen, initialStep]);
 
   // Current Learner Context Object
   const learnerContext = useMemo(() => {
     return createLearnerContext({
       goal,
       destination,
+      targetDeliverables,
       currentLevel,
       purpose,
+      learningStyle,
+      preferredStack,
       targetHorizon,
+      studyRhythm,
+      theoryVsPractice,
+      mustIncludeTopics,
       weeklyHours,
       constraints,
       priorKnowledge
     });
-  }, [goal, destination, currentLevel, purpose, targetHorizon, weeklyHours, constraints, priorKnowledge]);
+  }, [
+    goal,
+    destination,
+    targetDeliverables,
+    currentLevel,
+    purpose,
+    learningStyle,
+    preferredStack,
+    targetHorizon,
+    studyRhythm,
+    theoryVsPractice,
+    mustIncludeTopics,
+    weeklyHours,
+    constraints,
+    priorKnowledge
+  ]);
 
   // Generated Deep Research Charter
   const generatedCharter = useMemo(() => {
-    return generateDeepResearchCharter(learnerContext);
-  }, [learnerContext]);
+    return generateDeepResearchCharter(learnerContext, selectedEngine);
+  }, [learnerContext, selectedEngine]);
 
   // Live Normalization Analysis
   const normalizationReport = useMemo(() => {
@@ -135,25 +312,83 @@ const UniversalRoadmapBridgeModal = ({
     return generateConversionPrompt(rawInputText, normalizationReport, learnerContext);
   }, [rawInputText, normalizationReport, learnerContext]);
 
+  // Auto-sync extracted goal & destination from parsed input if fields were blank
+  useEffect(() => {
+    if (normalizationReport?.canonicalRoadmap?.[0]) {
+      const primarySubject = normalizationReport.canonicalRoadmap[0];
+      const extractedGoal =
+        primarySubject.learnerContext?.primaryLearningGoal ||
+        primarySubject.learnerContext?.goal ||
+        (primarySubject.name && primarySubject.name !== 'Custom Learning Track' && primarySubject.name !== 'Imported Learning Pathway' ? primarySubject.name : '');
+      const extractedDest =
+        primarySubject.learnerContext?.targetDestination ||
+        primarySubject.learnerContext?.destination ||
+        '';
+
+      if (extractedGoal && !goal) {
+        setGoal(extractedGoal);
+      }
+      if (extractedDest && !destination) {
+        setDestination(extractedDest);
+      }
+    }
+  }, [normalizationReport, goal, destination]);
+
   // Copy Charter to Clipboard
   const handleCopyCharter = async () => {
     try {
-      await navigator.clipboard.writeText(generatedCharter);
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(generatedCharter);
+      } else {
+        throw new Error('Clipboard API unavailable');
+      }
       setCopiedCharter(true);
       setTimeout(() => setCopiedCharter(false), 2500);
-    } catch (err) {
-      console.warn('Clipboard write error:', err);
+    } catch {
+      try {
+        const textarea = document.createElement('textarea');
+        textarea.value = generatedCharter;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+        setCopiedCharter(true);
+        setTimeout(() => setCopiedCharter(false), 2500);
+      } catch (err) {
+        console.warn('Clipboard write error:', err);
+      }
     }
   };
 
   // Copy Conversion Prompt to Clipboard
   const handleCopyConversionPrompt = async () => {
     try {
-      await navigator.clipboard.writeText(conversionPrompt);
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(conversionPrompt);
+      } else {
+        throw new Error('Clipboard API unavailable');
+      }
       setCopiedConversionPrompt(true);
       setTimeout(() => setCopiedConversionPrompt(false), 2500);
-    } catch (err) {
-      console.warn('Clipboard write error:', err);
+    } catch {
+      try {
+        const textarea = document.createElement('textarea');
+        textarea.value = conversionPrompt;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+        setCopiedConversionPrompt(true);
+        setTimeout(() => setCopiedConversionPrompt(false), 2500);
+      } catch (err) {
+        console.warn('Clipboard write error:', err);
+      }
     }
   };
 
@@ -166,9 +401,35 @@ const UniversalRoadmapBridgeModal = ({
     }
     setGoal('Applied Quantum Computing');
     setDestination('Quantum Algorithm Developer');
+    setTargetDeliverables('Qiskit quantum circuit simulator, Shor and Grover algorithm implementations');
+    setPreferredStack('Python, Qiskit, Cirq, NumPy');
+    setLearningStyle(LEARNER_STYLES.BALANCED);
     setCurrentLevel(LEARNER_LEVELS.INTERMEDIATE);
     setPurpose(LEARNER_PURPOSES.RESEARCH);
+    setTargetHorizon('3-6 months');
+    setWeeklyHours(12);
+    setStudyRhythm(STUDY_RHYTHMS.DAILY_STANDARD);
+    setTheoryVsPractice(THEORY_PRACTICE_RATIOS.BALANCED);
+    setMustIncludeTopics('Bloch sphere, Quantum entanglement, Quantum teleportation protocol');
     setCurrentStep(STEPS.INPUT);
+  };
+
+  // Apply Quick Goal Preset
+  const handleApplyPreset = (preset) => {
+    setGoal(preset.goal || '');
+    setDestination(preset.destination || '');
+    setTargetDeliverables(preset.targetDeliverables || '');
+    setPreferredStack(preset.preferredStack || '');
+    setLearningStyle(preset.learningStyle || LEARNER_STYLES.BALANCED);
+    setPurpose(preset.purpose || LEARNER_PURPOSES.CAREER);
+    setCurrentLevel(preset.currentLevel || LEARNER_LEVELS.BEGINNER);
+    setTargetHorizon(preset.targetHorizon || '3-6 months');
+    setWeeklyHours(preset.weeklyHours || 10);
+    setStudyRhythm(preset.studyRhythm || STUDY_RHYTHMS.DAILY_STANDARD);
+    setTheoryVsPractice(preset.theoryVsPractice || THEORY_PRACTICE_RATIOS.BALANCED);
+    setMustIncludeTopics(preset.mustIncludeTopics || '');
+    setPriorKnowledge(preset.priorKnowledge || '');
+    setConstraints(preset.constraints || '');
   };
 
   // Execute Import
@@ -208,10 +469,10 @@ const UniversalRoadmapBridgeModal = ({
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-electric-100 dark:bg-electric-950/70 text-electric-700 dark:text-electric-300 border border-electric-200 dark:border-electric-800">
+                <span className="text-xs font-bold uppercase tracking-wider px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
                   Universal Bridge v2.3
                 </span>
-                <span className="text-xs font-semibold text-slate-500">Research-First Ingestion</span>
+                <span className="text-xs font-medium text-slate-500">Structured Study Plan & Curriculum Importer</span>
               </div>
               <h2 id="universal-roadmap-bridge-title" className="font-display font-black text-lg sm:text-xl text-slate-900 dark:text-white">
                 Universal AI Roadmap Bridge
@@ -222,7 +483,7 @@ const UniversalRoadmapBridgeModal = ({
           <button
             type="button"
             onClick={onClose}
-            className="p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            className="p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
             aria-label="Close dialog"
           >
             <X className="w-5 h-5" />
@@ -230,33 +491,33 @@ const UniversalRoadmapBridgeModal = ({
         </div>
 
         {/* ── STEP PROGRESS BAR ── */}
-        <div className="px-6 py-3 bg-slate-100/60 dark:bg-slate-950/40 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs font-bold">
+        <div className="px-6 py-3.5 bg-slate-100/60 dark:bg-slate-950/40 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs font-bold">
           <button
             type="button"
             onClick={() => setCurrentStep(STEPS.INTENT)}
-            className={`flex items-center gap-1.5 transition-colors ${currentStep === STEPS.INTENT ? 'text-electric-600 dark:text-electric-400' : 'text-slate-500'}`}
+            className={`flex items-center gap-2 transition-colors cursor-pointer ${currentStep === STEPS.INTENT ? 'text-electric-600 dark:text-electric-400 font-extrabold' : 'text-slate-500 font-semibold'}`}
           >
-            <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] bg-electric-600 text-white">1</span>
-            <span>Learner Intent & Charter</span>
+            <span className="w-5 h-5 rounded-full flex items-center justify-center text-xs bg-electric-600 text-white font-bold">1</span>
+            <span className="text-xs sm:text-sm">Learner Intent & Charter</span>
           </button>
-          <span className="text-slate-300 dark:text-slate-700">➔</span>
+          <span className="text-slate-300 dark:text-slate-700 font-bold">➔</span>
           <button
             type="button"
             onClick={() => setCurrentStep(STEPS.INPUT)}
-            className={`flex items-center gap-1.5 transition-colors ${currentStep === STEPS.INPUT ? 'text-electric-600 dark:text-electric-400' : 'text-slate-500'}`}
+            className={`flex items-center gap-2 transition-colors cursor-pointer ${currentStep === STEPS.INPUT ? 'text-electric-600 dark:text-electric-400 font-extrabold' : 'text-slate-500 font-semibold'}`}
           >
-            <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] ${currentStep >= STEPS.INPUT ? 'bg-electric-600 text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-600'}`}>2</span>
-            <span>Paste AI Output</span>
+            <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold ${currentStep >= STEPS.INPUT ? 'bg-electric-600 text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-600'}`}>2</span>
+            <span className="text-xs sm:text-sm">Paste Syllabus / Notes</span>
           </button>
-          <span className="text-slate-300 dark:text-slate-700">➔</span>
+          <span className="text-slate-300 dark:text-slate-700 font-bold">➔</span>
           <button
             type="button"
             onClick={() => normalizationReport && setCurrentStep(STEPS.CONFIDENCE_AND_PREVIEW)}
             disabled={!normalizationReport}
-            className={`flex items-center gap-1.5 transition-colors ${currentStep === STEPS.CONFIDENCE_AND_PREVIEW ? 'text-electric-600 dark:text-electric-400' : 'text-slate-500 disabled:opacity-50'}`}
+            className={`flex items-center gap-2 transition-colors ${currentStep === STEPS.CONFIDENCE_AND_PREVIEW ? 'text-electric-600 dark:text-electric-400 font-extrabold' : 'text-slate-500 font-semibold disabled:opacity-50'} ${normalizationReport ? 'cursor-pointer' : ''}`}
           >
-            <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] ${currentStep >= STEPS.CONFIDENCE_AND_PREVIEW ? 'bg-electric-600 text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-600'}`}>3</span>
-            <span>Preview & Confidence</span>
+            <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold ${currentStep >= STEPS.CONFIDENCE_AND_PREVIEW ? 'bg-electric-600 text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-600'}`}>3</span>
+            <span className="text-xs sm:text-sm">Review & Import</span>
           </button>
         </div>
 
@@ -268,13 +529,64 @@ const UniversalRoadmapBridgeModal = ({
           {/* ══════════════════════════════════════════════════════════ */}
           {currentStep === STEPS.INTENT && (
             <div className="space-y-6">
-              <div className="bg-electric-50/70 dark:bg-electric-950/30 border border-electric-200 dark:border-electric-900 rounded-2xl p-4 text-xs text-electric-900 dark:text-electric-200 space-y-1">
-                <p className="font-bold">Reconstruct any field deeply before studying it.</p>
-                <p className="text-electric-700 dark:text-electric-300">
-                  Learning Tracker generates a deep 15-phase research charter you can copy to Claude, ChatGPT, or Gemini. The external AI reconstructs foundational lineage, epistemic concepts, learning vs. doing separation, anti-saturation thresholds, and the research frontier rather than creating a shallow course syllabus.
+              <div className="bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 sm:p-5 text-sm text-slate-800 dark:text-slate-200 space-y-1.5">
+                <p className="font-bold flex items-center gap-2 text-slate-900 dark:text-white text-sm sm:text-base">
+                  <BookOpen className="w-4 h-4 text-electric-600 dark:text-electric-400 shrink-0" />
+                  <span>Structured Curriculum & Study Plan Specification</span>
+                </p>
+                <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+                  Specify your exact study goals, dream milestone projects, and preferred tools below. Learning Tracker crafts a complete syllabus specification you can run in your research assistant or LLM, then paste the structured result directly into your tracker.
                 </p>
               </div>
 
+              {/* ── CURRICULUM ARCHITECTURE SPECTRUM ── */}
+              <div className="flex flex-wrap items-center justify-between gap-2.5 p-3 rounded-xl bg-slate-100/90 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-xs">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+                  <span className="font-bold text-slate-800 dark:text-slate-200">
+                    Curriculum Architecture:
+                  </span>
+                  <span className="text-slate-600 dark:text-slate-400 font-medium">
+                    Model-Agnostic Specification (Gemini • OpenAI • Claude • DeepSeek)
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300">
+                  <span className="px-2 py-0.5 rounded-md bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300">Practical Crafts & Arts</span>
+                  <span>↔</span>
+                  <span className="px-2 py-0.5 rounded-md bg-purple-100 dark:bg-purple-950/70 text-purple-800 dark:text-purple-300">Frontier Sciences</span>
+                </div>
+              </div>
+
+              {/* ── QUICK GOAL PRESETS ── */}
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                    Quick Goal Presets (One-click fill verified curriculum structure):
+                  </span>
+                  <span className="text-xs text-electric-600 dark:text-electric-400 font-bold">
+                    Click to load verified profile
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                  {GOAL_PRESETS.map((p, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => handleApplyPreset(p)}
+                      className="p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-electric-500 dark:hover:border-electric-500 text-left transition-all cursor-pointer shadow-xs hover:shadow-sm group"
+                    >
+                      <div className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white group-hover:text-electric-600 dark:group-hover:text-electric-400 transition-colors">
+                        {p.label}
+                      </div>
+                      <div className="text-xs text-slate-500 dark:text-slate-400 truncate mt-1">
+                        {p.targetDeliverables.slice(0, 50)}...
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* ── ROW 1: CORE GOAL & OUTCOME ── */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <label htmlFor="learner-goal-input" className="block text-xs font-bold text-slate-700 dark:text-slate-200">
@@ -305,7 +617,74 @@ const UniversalRoadmapBridgeModal = ({
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* ── ROW 2: DELIVERABLES & TECH STACK ── */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label htmlFor="learner-deliverables-input" className="block text-xs font-bold text-slate-700 dark:text-slate-200">
+                    Target Deliverables & Milestones (What systems/projects must you build?)
+                  </label>
+                  <input
+                    id="learner-deliverables-input"
+                    type="text"
+                    value={targetDeliverables}
+                    onChange={(e) => setTargetDeliverables(e.target.value)}
+                    placeholder="e.g. Custom RTOS kernel, CUDA matrix engine, production compiler..."
+                    className="w-full px-3.5 py-2.5 rounded-xl border-2 border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:border-electric-500"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label htmlFor="learner-stack-input" className="block text-xs font-bold text-slate-700 dark:text-slate-200">
+                    Preferred Tech Stack & Toolchain (Languages, hardware, frameworks)
+                  </label>
+                  <input
+                    id="learner-stack-input"
+                    type="text"
+                    value={preferredStack}
+                    onChange={(e) => setPreferredStack(e.target.value)}
+                    placeholder="e.g. C/C++, FreeRTOS, STM32 or Python, PyTorch, CUDA or Rust, Tokio..."
+                    className="w-full px-3.5 py-2.5 rounded-xl border-2 border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:border-electric-500"
+                  />
+                </div>
+              </div>
+
+              {/* ── ROW 3: PEDAGOGY & FOCUS RATIO ── */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label htmlFor="learner-style-select" className="block text-xs font-bold text-slate-700 dark:text-slate-200">
+                    Pedagogical Learning Style
+                  </label>
+                  <select
+                    id="learner-style-select"
+                    value={learningStyle}
+                    onChange={(e) => setLearningStyle(e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-xl border-2 border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:border-electric-500"
+                  >
+                    {Object.keys(LEARNER_STYLES).map((stl) => (
+                      <option key={stl} value={stl}>{LEARNER_STYLE_LABELS[stl]}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label htmlFor="learner-ratio-select" className="block text-xs font-bold text-slate-700 dark:text-slate-200">
+                    Theory vs. Practice Balance Ratio
+                  </label>
+                  <select
+                    id="learner-ratio-select"
+                    value={theoryVsPractice}
+                    onChange={(e) => setTheoryVsPractice(e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-xl border-2 border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:border-electric-500"
+                  >
+                    {Object.keys(THEORY_PRACTICE_RATIOS).map((rt) => (
+                      <option key={rt} value={rt}>{THEORY_PRACTICE_LABELS[rt]}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* ── ROW 4: TIME HORIZON, WEEKLY HOURS & RHYTHM ── */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
                 <div className="space-y-1.5">
                   <label htmlFor="learner-level-select" className="block text-xs font-bold text-slate-700 dark:text-slate-200">
                     Current Level
@@ -348,13 +727,13 @@ const UniversalRoadmapBridgeModal = ({
                     value={targetHorizon}
                     onChange={(e) => setTargetHorizon(e.target.value)}
                     placeholder="e.g. 3-6 months"
-                    className="w-full px-3.5 py-2.5 rounded-xl border-2 border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:border-electric-500"
+                    className="w-full px-3 py-2.5 rounded-xl border-2 border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:border-electric-500"
                   />
                 </div>
 
                 <div className="space-y-1.5">
                   <label htmlFor="learner-hours-input" className="block text-xs font-bold text-slate-700 dark:text-slate-200">
-                    Weekly Time (Hours)
+                    Weekly Hours
                   </label>
                   <input
                     id="learner-hours-input"
@@ -363,79 +742,175 @@ const UniversalRoadmapBridgeModal = ({
                     max="80"
                     value={weeklyHours}
                     onChange={(e) => setWeeklyHours(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border-2 border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:border-electric-500"
+                    className="w-full px-3 py-2.5 rounded-xl border-2 border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:border-electric-500"
                   />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label htmlFor="learner-rhythm-select" className="block text-xs font-bold text-slate-700 dark:text-slate-200">
+                    Study Rhythm
+                  </label>
+                  <select
+                    id="learner-rhythm-select"
+                    value={studyRhythm}
+                    onChange={(e) => setStudyRhythm(e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-xl border-2 border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:border-electric-500"
+                  >
+                    {Object.keys(STUDY_RHYTHMS).map((rhy) => (
+                      <option key={rhy} value={rhy}>{STUDY_RHYTHM_LABELS[rhy]}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
 
-              {/* Expandable Advanced Context (Optional) */}
+              {/* ── EXPANDABLE ADVANCED / CUSTOM REQUIREMENTS ── */}
               <div>
                 <button
                   type="button"
                   onClick={() => setShowAdvancedContext(!showAdvancedContext)}
                   className="text-xs font-bold text-electric-600 dark:text-electric-400 flex items-center gap-1 hover:underline"
                 >
-                  <span>{showAdvancedContext ? '▼ Hide' : '▶ Show'} Optional Constraints & Background</span>
+                  <span>{showAdvancedContext ? '▼ Hide' : '▶ Show'} Advanced Topic & Constraint Customization</span>
                 </button>
 
                 {showAdvancedContext && (
-                  <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
+                  <div className="mt-3 space-y-4 p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
                     <div className="space-y-1.5">
-                      <label htmlFor="learner-constraints-input" className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                        Constraints / Resources (Hardware, Tools, Budget)
+                      <label htmlFor="learner-must-include-input" className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                        Mandatory Topics To Include (Specific concepts you must cover)
                       </label>
                       <input
-                        id="learner-constraints-input"
+                        id="learner-must-include-input"
                         type="text"
-                        value={constraints}
-                        onChange={(e) => setConstraints(e.target.value)}
-                        placeholder="e.g. Linux laptop, no GPU, no hardware lab..."
+                        value={mustIncludeTopics}
+                        onChange={(e) => setMustIncludeTopics(e.target.value)}
+                        placeholder="e.g. DMA transfers, Interrupt nesting, Memory allocators, Ring buffers..."
                         className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-semibold text-slate-800 dark:text-slate-200"
                       />
                     </div>
 
-                    <div className="space-y-1.5">
-                      <label htmlFor="learner-prior-input" className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                        Prior Knowledge / Background
-                      </label>
-                      <input
-                        id="learner-prior-input"
-                        type="text"
-                        value={priorKnowledge}
-                        onChange={(e) => setPriorKnowledge(e.target.value)}
-                        placeholder="e.g. Python basics, calculus, circuits..."
-                        className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-semibold text-slate-800 dark:text-slate-200"
-                      />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <label htmlFor="learner-constraints-input" className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                          Constraints & Resources (Hardware, Tools, OS, Budget)
+                        </label>
+                        <input
+                          id="learner-constraints-input"
+                          type="text"
+                          value={constraints}
+                          onChange={(e) => setConstraints(e.target.value)}
+                          placeholder="e.g. Linux laptop, no GPU, no hardware lab..."
+                          className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-semibold text-slate-800 dark:text-slate-200"
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label htmlFor="learner-prior-input" className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                          Prior Knowledge & Existing Foundations
+                        </label>
+                        <input
+                          id="learner-prior-input"
+                          type="text"
+                          value={priorKnowledge}
+                          onChange={(e) => setPriorKnowledge(e.target.value)}
+                          placeholder="e.g. Python basics, calculus, circuits..."
+                          className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-semibold text-slate-800 dark:text-slate-200"
+                        />
+                      </div>
                     </div>
                   </div>
                 )}
               </div>
 
+              {/* ── AI ENGINE / PROMPT PROFILE SELECTOR ── */}
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                    Target AI Engine & Prompt Profile
+                  </span>
+                  <span className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold">
+                    Calibrated specifically for each model family
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedEngine(RESEARCH_CHARTER_ENGINES.UNIVERSAL_V3)}
+                    className={`p-3.5 rounded-2xl border-2 text-left transition-all cursor-pointer ${
+                      selectedEngine === RESEARCH_CHARTER_ENGINES.UNIVERSAL_V3
+                        ? 'border-electric-500 bg-electric-50/70 dark:bg-electric-950/40 shadow-xs ring-1 ring-electric-500'
+                        : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80 hover:border-slate-300 dark:hover:border-slate-600'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-extrabold text-slate-900 dark:text-white flex items-center gap-1.5">
+                        <span className="text-sm">✨</span>
+                        <span>Claude 3.7 / Universal v3.0</span>
+                      </span>
+                      {selectedEngine === RESEARCH_CHARTER_ENGINES.UNIVERSAL_V3 && (
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-electric-600 text-white font-bold">
+                          Active
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-1 leading-relaxed">
+                      Full 15-phase research dossier + 6 evidence layers + canonical schema. Optimal for Claude 3.7 Sonnet, GPT-4o, and DeepSeek R1.
+                    </p>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setSelectedEngine(RESEARCH_CHARTER_ENGINES.GEMINI_COMPACT)}
+                    className={`p-3.5 rounded-2xl border-2 text-left transition-all cursor-pointer ${
+                      selectedEngine === RESEARCH_CHARTER_ENGINES.GEMINI_COMPACT
+                        ? 'border-emerald-500 bg-emerald-50/70 dark:bg-emerald-950/40 shadow-xs ring-1 ring-emerald-500'
+                        : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80 hover:border-slate-300 dark:hover:border-slate-600'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-extrabold text-slate-900 dark:text-white flex items-center gap-1.5">
+                        <span className="text-sm">⚡</span>
+                        <span>Gemini Deep Research (Compact)</span>
+                      </span>
+                      {selectedEngine === RESEARCH_CHARTER_ENGINES.GEMINI_COMPACT && (
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-600 text-white font-bold">
+                          Active
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-1 leading-relaxed">
+                      High-density token-optimized profile calibrated for Google Gemini to prevent output truncation while preserving 100% schema completeness.
+                    </p>
+                  </button>
+                </div>
+              </div>
+
               {/* Prompt Copy Card */}
-              <div className="p-4 rounded-2xl bg-slate-900 text-white space-y-3 shadow-md">
+              <div className="p-5 rounded-2xl bg-slate-900 text-white space-y-3.5 shadow-md">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <Sparkles className="w-4 h-4 text-amber-400" />
+                    <Compass className="w-4 h-4 text-slate-300" />
                     <span className="text-xs font-bold uppercase tracking-wider text-slate-300">
-                      Generated Deep Research Charter Prompt
+                      Generated Curriculum Specification ({selectedEngine === RESEARCH_CHARTER_ENGINES.GEMINI_COMPACT ? 'Gemini Compact' : 'Universal v3.0'})
                     </span>
                   </div>
                   <button
                     type="button"
                     onClick={handleCopyCharter}
-                    className="btn-tactile-electric px-3 py-1.5 text-xs flex items-center gap-1.5 bg-electric-500 hover:bg-electric-400"
+                    className="btn-tactile-electric px-3.5 py-1.5 text-xs flex items-center gap-1.5 bg-electric-500 hover:bg-electric-400 cursor-pointer"
                   >
                     {copiedCharter ? <Check className="w-3.5 h-3.5 text-white" /> : <Copy className="w-3.5 h-3.5 text-white" />}
-                    <span>{copiedCharter ? 'Copied Prompt!' : 'Copy Charter Prompt'}</span>
+                    <span>{copiedCharter ? 'Copied Prompt!' : 'Copy Specification'}</span>
                   </button>
                 </div>
 
-                <div className="p-3 rounded-xl bg-slate-950 font-mono text-[11px] text-slate-300 max-h-32 overflow-y-auto whitespace-pre-line border border-slate-800">
+                <div className="p-3.5 rounded-xl bg-slate-950 font-mono text-xs text-slate-300 max-h-36 overflow-y-auto whitespace-pre-line border border-slate-800 leading-relaxed">
                   {generatedCharter.slice(0, 500)}...
                 </div>
 
-                <p className="text-[11px] text-slate-400">
-                  Paste this into Claude 3.7, ChatGPT o3-mini, Gemini 2.0 Pro, or DeepSeek R1 to reconstruct the field. Then paste their answer in Step 2.
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  Copy this specification into your study assistant (ChatGPT, Claude, Gemini, DeepSeek). Then paste the resulting syllabus into Step 2.
                 </p>
               </div>
             </div>
@@ -448,11 +923,11 @@ const UniversalRoadmapBridgeModal = ({
             <div className="space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <div>
-                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                    Paste the AI roadmap or research answer here
+                  <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                    Paste the Course Outline, Syllabus, or Roadmap
                   </h3>
-                  <p className="text-xs text-slate-500">
-                    Accepts Markdown, canonical JSON, alternate course formats, research dossiers, or freeform text.
+                  <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400">
+                    Accepts Markdown checklists, course syllabi, JSON outlines, study notes, or raw paste. Extracts learning units, practice drills, and milestone projects automatically.
                   </p>
                 </div>
 
@@ -1209,4 +1684,5 @@ Examples:
   );
 };
 
+export { STEPS };
 export default UniversalRoadmapBridgeModal;

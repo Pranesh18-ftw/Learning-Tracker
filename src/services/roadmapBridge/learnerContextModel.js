@@ -46,6 +46,46 @@ export const LEARNER_PURPOSE_LABELS = {
   MIXED: 'Mixed / Multi-disciplinary'
 };
 
+export const LEARNER_STYLES = {
+  BALANCED: 'BALANCED',
+  HANDS_ON: 'HANDS_ON',
+  FIRST_PRINCIPLES: 'FIRST_PRINCIPLES',
+  FAST_TRACK: 'FAST_TRACK'
+};
+
+export const LEARNER_STYLE_LABELS = {
+  BALANCED: 'Balanced (Equal theory foundations and project synthesis)',
+  HANDS_ON: 'Project-First (Build systems immediately, acquire theory just-in-time)',
+  FIRST_PRINCIPLES: 'First-Principles (Mathematical rigor, derivations, and underlying mechanics first)',
+  FAST_TRACK: 'Fast-Track Fluency (High-leverage core 20% driving 80% practical competence)'
+};
+
+export const STUDY_RHYTHMS = {
+  DAILY_STANDARD: 'DAILY_STANDARD',
+  DAILY_MICRO: 'DAILY_MICRO',
+  WEEKEND_DEEP: 'WEEKEND_DEEP',
+  FLEXIBLE: 'FLEXIBLE'
+};
+
+export const STUDY_RHYTHM_LABELS = {
+  DAILY_STANDARD: 'Daily Standard (1-2 hours each day)',
+  DAILY_MICRO: 'Daily Micro-Habit (30-45 mins every day)',
+  WEEKEND_DEEP: 'Deep Weekend Sprints (4-8 hours on weekends)',
+  FLEXIBLE: 'Flexible / Self-Paced asynchronous rhythm'
+};
+
+export const THEORY_PRACTICE_RATIOS = {
+  BALANCED: 'BALANCED',
+  PRACTICE_HEAVY: 'PRACTICE_HEAVY',
+  THEORY_HEAVY: 'THEORY_HEAVY'
+};
+
+export const THEORY_PRACTICE_LABELS = {
+  BALANCED: '50% Hands-on Application / 50% Conceptual Foundations',
+  PRACTICE_HEAVY: '70% Practical Implementation & Debugging / 30% Theory',
+  THEORY_HEAVY: '70% Rigorous Theory & Literature / 30% Practical Verification'
+};
+
 /**
  * Creates a clean learner context record with validated defaults.
  *
@@ -55,6 +95,9 @@ export const LEARNER_PURPOSE_LABELS = {
 export function createLearnerContext(raw = {}) {
   const goal = typeof raw.goal === 'string' ? raw.goal.trim() : '';
   const destination = typeof raw.destination === 'string' ? raw.destination.trim() : '';
+  const targetDeliverables = typeof raw.targetDeliverables === 'string' && raw.targetDeliverables.trim()
+    ? raw.targetDeliverables.trim()
+    : null;
 
   const currentLevel = Object.prototype.hasOwnProperty.call(LEARNER_LEVELS, raw.currentLevel)
     ? raw.currentLevel
@@ -64,9 +107,29 @@ export function createLearnerContext(raw = {}) {
     ? raw.purpose
     : LEARNER_PURPOSES.CAREER;
 
+  const learningStyle = Object.prototype.hasOwnProperty.call(LEARNER_STYLES, raw.learningStyle)
+    ? raw.learningStyle
+    : LEARNER_STYLES.BALANCED;
+
+  const preferredStack = typeof raw.preferredStack === 'string' && raw.preferredStack.trim()
+    ? raw.preferredStack.trim()
+    : null;
+
   const targetHorizon = typeof raw.targetHorizon === 'string' && raw.targetHorizon.trim()
     ? raw.targetHorizon.trim()
     : '3-6 months';
+
+  const studyRhythm = Object.prototype.hasOwnProperty.call(STUDY_RHYTHMS, raw.studyRhythm)
+    ? raw.studyRhythm
+    : STUDY_RHYTHMS.DAILY_STANDARD;
+
+  const theoryVsPractice = Object.prototype.hasOwnProperty.call(THEORY_PRACTICE_RATIOS, raw.theoryVsPractice)
+    ? raw.theoryVsPractice
+    : THEORY_PRACTICE_RATIOS.BALANCED;
+
+  const mustIncludeTopics = typeof raw.mustIncludeTopics === 'string' && raw.mustIncludeTopics.trim()
+    ? raw.mustIncludeTopics.trim()
+    : null;
 
   let weeklyHours = 10;
   if (typeof raw.weeklyHours === 'number' && !isNaN(raw.weeklyHours) && raw.weeklyHours > 0) {
@@ -89,9 +152,15 @@ export function createLearnerContext(raw = {}) {
   return {
     goal,
     destination,
+    targetDeliverables,
     currentLevel,
     purpose,
+    learningStyle,
+    preferredStack,
     targetHorizon,
+    studyRhythm,
+    theoryVsPractice,
+    mustIncludeTopics,
     weeklyHours,
     constraints,
     priorKnowledge,

@@ -49,8 +49,8 @@ const IdentitySystemKnowledgeCard = ({
             <ShieldCheck className="w-4 h-4" />
           </div>
           <div>
-            <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400 block">
-              Section 05 · Transparency & Knowledge Integrity
+            <span className="text-xs font-sans font-medium text-slate-500 dark:text-slate-400 block">
+              System Transparency & Inferred Knowledge
             </span>
             <h2 className="font-display font-black text-xl text-slate-900 dark:text-white tracking-tight">
               What Learning Tracker currently knows
@@ -58,7 +58,7 @@ const IdentitySystemKnowledgeCard = ({
           </div>
         </div>
 
-        <span className="text-xs font-mono font-bold text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700">
+        <span className="text-xs font-sans font-medium text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700">
           User Corrections Overrule System Logic
         </span>
       </div>
@@ -102,7 +102,7 @@ const IdentitySystemKnowledgeCard = ({
                     <span className={`px-2 py-0.5 rounded-lg text-[10px] font-mono font-bold uppercase tracking-wider border ${tierBadgeColor}`}>
                       {item.tier}
                     </span>
-                    <span className="text-xs font-mono font-bold text-slate-500 dark:text-slate-400">
+                    <span className="text-xs font-sans font-medium text-slate-500 dark:text-slate-400">
                       · {item.category}
                     </span>
                     {isOverridden && (
@@ -122,7 +122,7 @@ const IdentitySystemKnowledgeCard = ({
                     {item.detail}
                   </p>
 
-                  <div className="flex items-center gap-3 text-[11px] font-mono text-slate-400 pt-1">
+                  <div className="flex items-center gap-3 text-xs font-sans text-slate-500 dark:text-slate-400 pt-1">
                     <span>Source: {item.source}</span>
                     <span>·</span>
                     <span>Confidence: {item.confidence}</span>
