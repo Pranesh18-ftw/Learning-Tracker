@@ -3,12 +3,83 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#000000" />
-    <meta name="description" content="Learning Tracker Dashboard" />
-    <title>Learning Tracker Dashboard</title>
+    <meta name="theme-color" content="#0B0F19" />
+    <meta name="description" content="Learning Tracker — 404 Page Not Found" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>404 — Page Not Found | Learning Tracker</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        background-color: #0B0F19;
+        color: #F8FAFC;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+        text-align: center;
+        box-sizing: border-box;
+      }
+      .card {
+        max-width: 440px;
+        margin: 1.5rem;
+        padding: 2.5rem 2rem;
+        background: #111827;
+        border: 1px solid #1F2937;
+        border-radius: 1rem;
+        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+      }
+      .badge {
+        display: inline-block;
+        padding: 0.25rem 0.75rem;
+        background: rgba(239, 68, 68, 0.15);
+        color: #F87171;
+        border: 1px solid rgba(239, 68, 68, 0.3);
+        border-radius: 9999px;
+        font-size: 0.75rem;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        margin-bottom: 1rem;
+      }
+      h1 {
+        font-size: 1.75rem;
+        font-weight: 800;
+        margin: 0 0 0.75rem 0;
+        color: #FFFFFF;
+      }
+      p {
+        color: #94A3B8;
+        font-size: 0.95rem;
+        line-height: 1.5;
+        margin: 0 0 1.5rem 0;
+      }
+      a {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        background-color: #2563EB;
+        color: #FFFFFF;
+        text-decoration: none;
+        padding: 0.75rem 1.5rem;
+        border-radius: 0.75rem;
+        font-size: 0.875rem;
+        font-weight: 700;
+        transition: background-color 0.15s ease;
+      }
+      a:hover {
+        background-color: #1D4ED8;
+      }
+    </style>
   </head>
   <body>
-    <noscript>You need to enable JavaScript to run this app.</noscript>
-    <div id="root"></div>
+    <div class="card">
+      <div class="badge">404 Error</div>
+      <h1>Coordinate Not Found</h1>
+      <p>The learning path or view you requested does not exist in this workspace.</p>
+      <a href="/">Return to Now (Dashboard)</a>
+    </div>
   </body>
 </html>

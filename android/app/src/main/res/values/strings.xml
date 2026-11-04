@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">Focus Integrity</string>
+    <string name="app_tagline">Learning Tracker Companion</string>
+    <string name="usage_access_title">Focus Integrity</string>
+    <string name="usage_access_description">During a focus session, Learning Tracker can measure app interruptions and time away from your intended work.\n\nWe use this only to calculate your focus-session summary.\n\nYour phone activity is processed for this purpose and is not presented as a surveillance feed.</string>
+    <string name="connect_focus_integrity">Connect Focus Integrity</string>
+</resources>

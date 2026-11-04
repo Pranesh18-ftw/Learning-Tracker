@@ -23,8 +23,8 @@ export const ACHIEVEMENTS = [
   },
   {
     id: 'ten-tasks',
-    name: 'Task Master',
-    title: 'Task Master',
+    name: 'Task Explorer',
+    title: 'Task Explorer',
     description: 'Complete 10 learning tasks.',
     category: 'tasks',
     icon: 'check-circle',
@@ -57,9 +57,9 @@ export const ACHIEVEMENTS = [
     color: 'green',
     maxProgress: 1,
     getProgress: ({ sessions = [] }) =>
-      sessions.some(s => Number(s.durationMinutes) > 0) ? 1 : 0,
+      sessions.some(s => Number(s.durationMinutes || s.duration || 0) > 0) ? 1 : 0,
     check: ({ sessions = [] }) =>
-      sessions.some(s => Number(s.durationMinutes) > 0)
+      sessions.some(s => Number(s.durationMinutes || s.duration || 0) > 0)
   },
   {
     id: 'focused-hour',
@@ -71,9 +71,9 @@ export const ACHIEVEMENTS = [
     color: 'blue',
     maxProgress: 1,
     getProgress: ({ sessions = [] }) =>
-      sessions.some(s => Number(s.durationMinutes) >= 60) ? 1 : 0,
+      sessions.some(s => Number(s.durationMinutes || s.duration || 0) >= 60) ? 1 : 0,
     check: ({ sessions = [] }) =>
-      sessions.some(s => Number(s.durationMinutes) >= 60)
+      sessions.some(s => Number(s.durationMinutes || s.duration || 0) >= 60)
   },
   {
     id: 'two-hour-focus',
@@ -85,9 +85,9 @@ export const ACHIEVEMENTS = [
     color: 'purple',
     maxProgress: 1,
     getProgress: ({ sessions = [] }) =>
-      sessions.some(s => Number(s.durationMinutes) >= 120) ? 1 : 0,
+      sessions.some(s => Number(s.durationMinutes || s.duration || 0) >= 120) ? 1 : 0,
     check: ({ sessions = [] }) =>
-      sessions.some(s => Number(s.durationMinutes) >= 120)
+      sessions.some(s => Number(s.durationMinutes || s.duration || 0) >= 120)
   },
 
   // Streak achievements
@@ -117,8 +117,8 @@ export const ACHIEVEMENTS = [
   },
   {
     id: 'thirty-day-streak',
-    name: 'Monthly Master',
-    title: 'Monthly Master',
+    name: 'Monthly Momentum',
+    title: 'Monthly Momentum',
     description: 'Maintain a 30-day learning streak.',
     category: 'streak',
     icon: 'flame',
@@ -140,14 +140,14 @@ export const ACHIEVEMENTS = [
     maxProgress: 5,
     getProgress: ({ sessions = [] }) => {
       const mins = sessions.reduce(
-        (total, s) => total + (Number(s.durationMinutes) || 0),
+        (total, s) => total + (Number(s.durationMinutes || s.duration) || 0),
         0
       );
       return Math.min(Math.floor(mins / 60), 5);
     },
     check: ({ sessions = [] }) => {
       const minutes = sessions.reduce(
-        (total, s) => total + (Number(s.durationMinutes) || 0),
+        (total, s) => total + (Number(s.durationMinutes || s.duration) || 0),
         0
       );
       return minutes >= 300;
@@ -164,14 +164,14 @@ export const ACHIEVEMENTS = [
     maxProgress: 10,
     getProgress: ({ sessions = [] }) => {
       const mins = sessions.reduce(
-        (total, s) => total + (Number(s.durationMinutes) || 0),
+        (total, s) => total + (Number(s.durationMinutes || s.duration) || 0),
         0
       );
       return Math.min(Math.floor(mins / 60), 10);
     },
     check: ({ sessions = [] }) => {
       const minutes = sessions.reduce(
-        (total, s) => total + (Number(s.durationMinutes) || 0),
+        (total, s) => total + (Number(s.durationMinutes || s.duration) || 0),
         0
       );
       return minutes >= 600;

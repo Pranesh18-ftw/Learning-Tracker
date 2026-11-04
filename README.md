@@ -1,25 +1,27 @@
 # Learning Tracker Dashboard
 
-A modern React dashboard for tracking learning progress with roadmap phases, Pomodoro timer, and achievement system.
+A tactile, local-first learning workstation for mastering deep STEM concepts with roadmap progression, focus sessions, verified recall evidence, and identity management.
 
 ## 🌟 Features
 
-- 📊 **Dashboard**: Overview of learning progress and statistics
-- 🗺️ **Roadmap**: Manage subjects, phases, and tasks with progress tracking
-- ⏰ **Pomodoro Timer**: Focus sessions with customizable work/break durations
-- 📚 **Learning Plan**: Schedule and track daily learning tasks
-- 📈 **Statistics**: Detailed analytics of study time and progress
-- � **Achievements**: Gamification system with unlockable badges
-- 🌙 **Dark Mode**: Toggle between light and dark themes
-- 💬 **Feedback System**: Collect user feedback for improvements
+- 📊 **Dashboard**: Active curriculum context, today's targets, and immediate next take
+- 🗺️ **Knowledge World & Roadmap**: Interactive concept topology, task tree, and curated tracks
+- ⏱️ **Focus Space**: Fullscreen focus session with qualitative memory retrieval and proof records
+- 📚 **Learning Plan**: Weekly schedule, detour management, and path reality
+- 📈 **Statistics**: Study velocity, verified time, and local streak integrity
+- 🏆 **Living Museum & Proof**: Verbatim memory reflections and milestone badges
+- 🎯 **Trajectory**: Placement mirror, capability clusters, and gap analysis
+- ⚙️ **Identity & Reality Control Room**: Device registry, privacy-preserving telemetry summaries, and local data export
+- 🌙 **Dark / Light Theme**: High-contrast tactile interface
 
 ## 🛠️ Tech Stack
 
 - **Frontend**: React 18, React Router DOM
-- **Styling**: Tailwind CSS
+- **Authentication (Optional)**: Firebase Web SDK v12 (Google Identity)
+- **Styling**: Tailwind CSS, Tactile 3D design system
 - **Icons**: Lucide React
 - **State Management**: React Context API
-- **Storage**: LocalStorage (client-side data persistence)
+- **Storage**: Browser LocalStorage with schema validation, prototype protection, and corruption quarantine
 
 ## 🚀 Quick Start
 
@@ -35,62 +37,72 @@ npm test -- --watchAll=false
 
 # Build for production
 npm run build
-
-# Deploy to Netlify
-npm run deploy
 ```
 
 ## 🏗️ Architecture
 The application is client-side and local-first.
-Application state is persisted in browser `localStorage`.
-There is no required backend server for normal application operation.
+All learning state is persisted in the user's browser `localStorage`.
+Authentication via Google Identity is optional and attaches an authenticated identity without replacing local storage ownership.
 
 ## 💾 Persistence Architecture
-- **Persistence**: Browser localStorage
+- **Persistence**: Browser localStorage with structural validation and quarantine
 - **Advantages**:
-  - Offline capability
-  - Simple, zero setup
-  - No account or login required
+  - Full offline capability
+  - Zero required backend setup
   - Instant local state
 - **Limitations**:
   - Device/browser specific
-  - Clearing browser data can remove state
-  - No automatic cross-device sync
-  - Finite browser storage quota
-- **Backup**: Use application export/import before clearing browser data.
+  - Clearing browser data removes local state unless exported
+- **Backup**: Use Settings > Export to save JSON identity and learning records.
 
 ## 📁 Project Structure
 
 ```
 src/
 ├── components/
-│   ├── DashboardTasks.jsx      # Main dashboard functionality
-│   ├── PomodoroTimer.jsx       # Timer component
-│   ├── TaskTree.jsx            # Roadmap task tree
-│   ├── TaskCompletionModal.jsx # Task completion interface
+│   ├── FocusSpace.jsx          # Dedicated focus session and evidence capture
+│   ├── TaskTree.jsx            # Canonical roadmap tree navigation
+│   ├── LearningWorldLandscape.jsx # Visual concept world
+│   ├── Topbar.jsx              # Navigation and auth status
 │   └── ...
 ├── pages/
-│   ├── DashboardPage.jsx       # Dashboard page
-│   ├── RoadmapPage.jsx         # Roadmap management
-│   ├── LearningPlanPage.jsx    # Learning plan scheduler
-│   ├── StatisticsPage.jsx      # Analytics and stats
-│   ├── AchievementsPage.jsx    # Achievement system
-│   └── SettingsPage.jsx        # Settings and feedback
+│   ├── DashboardPage.jsx       # Daily overview and next actions
+│   ├── RoadmapPage.jsx         # Roadmap & concept explorer
+│   ├── LearningPlanPage.jsx    # Weekly schedule & detour planning
+│   ├── StatisticsPage.jsx      # Analytics and study time
+│   ├── AchievementsPage.jsx    # Living Museum proof portfolio
+│   ├── TrajectoryPage.jsx      # Career & capability trajectory
+│   └── SettingsPage.jsx        # Identity, devices & privacy control room
+├── services/
+│   ├── authService.js          # Google identity via Firebase Auth
+│   ├── accountIdentityService.js # Canonical user & device identity
+│   ├── focusIntegrityService.js # Companion session lifecycle & summary telemetry
+│   └── syncEngine.js           # Local outbox queue for future sync
 ├── context/
-│   └── RoadmapContext.jsx      # Global state management
-└── onboarding/
-    └── Onboarding.jsx           # Tutorial system
+│   └── RoadmapContext.jsx      # Central application state & action provider
+└── utils/
+    ├── dateUtils.js            # Calendar date keys & streak calculations
+    ├── storage.js              # Safe storage with quarantine & prototype protection
+    ├── securityUtils.js        # URL validation, object sanitization, and path masking
+    └── roadmapProgressResolver.js # Canonical progress & completion logic
 ```
 
 ## 🔧 Configuration
 
 ### Environment Variables
-No environment variables required - all data is stored locally in the browser.
+Core functionality runs completely offline without any environment variables.
+For optional Google Identity authentication, copy `.env.example` to `.env.local` and fill in your Firebase Web App configuration:
+- `REACT_APP_FIREBASE_API_KEY`
+- `REACT_APP_FIREBASE_AUTH_DOMAIN`
+- `REACT_APP_FIREBASE_PROJECT_ID`
+- `REACT_APP_FIREBASE_STORAGE_BUCKET`
+- `REACT_APP_FIREBASE_MESSAGING_SENDER_ID`
+- `REACT_APP_FIREBASE_APP_ID`
 
 ### Build Configuration
-- Build tool: Create React App
+- Build tool: Create React App (react-scripts 5.0.1)
 - Target: Modern browsers (ES6+)
-- Bundle size: ~78KB (gzipped)
+- Single Page Application with client-side routing
 
 ## 🌐 Deployment
 
@@ -109,12 +121,13 @@ No environment variables required - all data is stored locally in the browser.
    - Connect GitHub repository to Netlify
    - Build command: `npm run build`
    - Publish directory: `build`
-   - Node version: 18
+   - Node version: 22 (configured in `netlify.toml`)
 
 3. **Configuration Files**
-   - `netlify.toml` - Build settings and redirects
-   - `.gitignore` - Excludes backend files
-   - `package.json` - Frontend dependencies only
+   - `netlify.toml` - Build settings, Node 22 runtime, and API redirects
+   - `.gitignore` - Excludes build outputs, local keys, and secrets
+   - `package.json` - Frontend and serverless dependencies
+   - `.env.example` - Template for web and serverless environment variables
 
 ## 📱 Features Overview
 
@@ -202,7 +215,7 @@ This project is open source and available under the MIT License.
 ## 🔗 Links
 
 - **Live Demo (GitHub Pages)**: [https://pranesh18-ftw.github.io/Learning-Tracker/](https://pranesh18-ftw.github.io/Learning-Tracker/)
-- **Live Demo (Netlify)**: [https://learning-tracker.netlify.app](https://learning-tracker.netlify.app)
+- **Live Demo (Netlify)**: [https://learningtracker001.netlify.app](https://learningtracker001.netlify.app)
 - **GitHub Repository**: [https://github.com/Pranesh18-ftw/Learning-Tracker](https://github.com/Pranesh18-ftw/Learning-Tracker)
 
 ---

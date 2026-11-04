@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 300" width="300" height="300" fill="none">
+  <defs>
+    <linearGradient id="silk-grad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stopColor="#CBD5E1" stopOpacity="0.8" />
+      <stop offset="50%" stopColor="#F8FAFC" stopOpacity="0.95" />
+      <stop offset="100%" stopColor="#94A3B8" stopOpacity="0.5" />
+    </linearGradient>
+    <filter id="silk-glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="1" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Structural Anchor Struts (8 Radial Lines from Center) -->
+  <g class="web-radials" stroke="url(#silk-grad)" stroke-width="1.2" stroke-linecap="round" opacity="0.6">
+    <line x1="150" y1="150" x2="20" y2="30" />
+    <line x1="150" y1="150" x2="150" y2="10" />
+    <line x1="150" y1="150" x2="280" y2="30" />
+    <line x1="150" y1="150" x2="295" y2="150" />
+    <line x1="150" y1="150" x2="270" y2="280" />
+    <line x1="150" y1="150" x2="150" y2="290" />
+    <line x1="150" y1="150" x2="30" y2="270" />
+    <line x1="150" y1="150" x2="5" y2="150" />
+  </g>
+
+  <!-- Concentric Polygonal Capture Spirals (5 Nested Rings) -->
+  <g class="web-spirals" stroke="url(#silk-grad)" stroke-width="1" stroke-linejoin="round" opacity="0.75" filter="url(#silk-glow)">
+    <!-- Ring 1 (Inner) -->
+    <polygon points="
+      126,128 150,124 174,128 178,150 172,174 150,176 128,172 122,150
+    " />
+
+    <!-- Ring 2 -->
+    <polygon points="
+      100,104 150,96 198,104 208,150 196,198 150,204 104,196 92,150
+    " />
+
+    <!-- Ring 3 -->
+    <polygon points="
+      74,80 150,68 222,80 238,150 220,222 150,232 80,220 62,150
+    " />
+
+    <!-- Ring 4 -->
+    <polygon points="
+      48,56 150,40 246,56 268,150 244,246 150,260 56,244 32,150
+    " stroke-width="1.2" />
+
+    <!-- Ring 5 (Outer Anchor Perimeter) -->
+    <polygon points="
+      22,32 150,12 270,32 292,150 268,272 150,288 32,268 8,150
+    " stroke-width="0.8" opacity="0.4" />
+  </g>
+
+  <!-- Dewdrop Condensation Highlights at Nodes -->
+  <g class="web-dewdrops" fill="#E2E8F0">
+    <circle cx="150" cy="96" r="2" />
+    <circle cx="198" cy="104" r="1.8" />
+    <circle cx="208" cy="150" r="1.8" />
+    <circle cx="150" cy="204" r="2.2" />
+    <circle cx="92" cy="150" r="1.8" />
+    <circle cx="150" cy="68" r="2.5" />
+    <circle cx="238" cy="150" r="2.2" />
+    <circle cx="62" cy="150" r="2.2" />
+  </g>
+
+  <!-- Central Hub (Silk Reinforced Core) -->
+  <circle cx="150" cy="150" r="6" fill="#475569" stroke="#94A3B8" stroke-width="1.5" />
+  <circle cx="150" cy="150" r="2" fill="#F8FAFC" />
+</svg>

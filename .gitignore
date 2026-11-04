@@ -11,6 +11,8 @@
 
 # Misc
 .DS_Store
+/scratch
+.env
 .env.local
 .env.development.local
 .env.test.local
@@ -136,3 +138,17 @@ Thumbs.db
 
 # Feedback viewer (development tool)
 view-feedback.html
+
+# Android local development and generated artifacts
+/android/.gradle/
+/android/.kotlin/
+/android/build/
+/android/app/build/
+/android/local.properties
+
+# Android keystores and release signing credentials
+*.jks
+*.keystore
+*.key
+release-signing.properties
+android/release-signing.properties
