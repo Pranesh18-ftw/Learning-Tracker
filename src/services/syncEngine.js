@@ -513,3 +513,78 @@ export async function executeSyncCycle() {
     };
   }
 }
+
+/**
+ * Graceful foreground synchronization fallback for platforms lacking Chromium Background Sync
+ * (e.g., Safari iOS, Safari macOS, Firefox desktop, Firefox mobile).
+ *
+ * Listens to:
+ * - 'online' window event (device recovers network connection)
+ * - 'focus' window event (user returns to browser tab/window)
+ * - 'visibilitychange' document event (tab transitions from background to visible)
+ * - Periodic foreground check (every 60s when active and outbox has pending items)
+ */
+let foregroundSyncCleanup = null;
+
+export function initForegroundSync(onSyncResult = null) {
+  if (typeof window === 'undefined') return () => {};
+
+  if (foregroundSyncCleanup) {
+    foregroundSyncCleanup();
+    foregroundSyncCleanup = null;
+  }
+
+  let isSyncing = false;
+
+  const triggerForegroundFlush = async () => {
+    if (isSyncing) return;
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+    if (getOutboxCount() === 0) return;
+
+    isSyncing = true;
+    try {
+      const res = await executeSyncCycle();
+      if (typeof onSyncResult === 'function') {
+        onSyncResult(res);
+      }
+    } catch (_) {
+      // Handled internally in executeSyncCycle
+    } finally {
+      isSyncing = false;
+    }
+  };
+
+  const handleVisibility = () => {
+    if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+      triggerForegroundFlush();
+    }
+  };
+
+  window.addEventListener('online', triggerForegroundFlush);
+  window.addEventListener('focus', triggerForegroundFlush);
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', handleVisibility);
+  }
+
+  // Periodic foreground sync when tab is actively open and mutations are pending
+  const intervalId = setInterval(() => {
+    if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+      triggerForegroundFlush();
+    }
+  }, 60000);
+
+  // Trigger initial check on mount if online and items in outbox
+  triggerForegroundFlush();
+
+  foregroundSyncCleanup = () => {
+    window.removeEventListener('online', triggerForegroundFlush);
+    window.removeEventListener('focus', triggerForegroundFlush);
+    if (typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', handleVisibility);
+    }
+    clearInterval(intervalId);
+    foregroundSyncCleanup = null;
+  };
+
+  return foregroundSyncCleanup;
+}

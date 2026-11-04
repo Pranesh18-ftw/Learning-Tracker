@@ -25,7 +25,8 @@ import {
   relaySessionStart,
   relaySessionEnd,
   fetchAndReconcileSessionTelemetry,
-  getServerSessionTelemetry
+  getServerSessionTelemetry,
+  fetchTelemetryHistory
 } from './phoneConnectionClient';
 import {
   COMPANION_REACHABILITY_THRESHOLD_MS,
@@ -658,6 +659,37 @@ export async function reconcileLateTelemetry(sessionId) {
     };
   }
   return result;
+}
+
+/**
+ * Queries server to retrieve all historical telemetry records for the user
+ * and stores them locally with idempotency.
+ */
+export async function fetchHistoricalTelemetryFromServer(options = {}) {
+  try {
+    const res = await fetchTelemetryHistory(options);
+    if (res.success && Array.isArray(res.summaries)) {
+      let savedCount = 0;
+      res.summaries.forEach(summary => {
+        const telemetryPayload = summary.payload ? {
+          ...summary.payload,
+          summaryId: summary.summaryId,
+          sessionId: summary.sessionId,
+          observedWindow: summary.observedWindow,
+          observedAt: summary.observedAt,
+          source: summary.source,
+          provenance: summary.provenance || TELEMETRY_PROVENANCE.REAL_EXTERNAL_SOURCE
+        } : summary;
+        if (recordFocusTelemetry(telemetryPayload)) {
+          savedCount++;
+        }
+      });
+      return { success: true, count: res.summaries.length, reconciledCount: savedCount, summaries: res.summaries };
+    }
+    return res;
+  } catch (err) {
+    return { success: false, error: err?.message, summaries: [] };
+  }
 }
 
 export { getServerSessionTelemetry, fetchAndReconcileSessionTelemetry };

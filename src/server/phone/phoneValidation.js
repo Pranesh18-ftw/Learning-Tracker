@@ -94,6 +94,10 @@ export function validatePairingCompleteRequest(payload) {
     };
   }
 
+  if (payload.platform && !['ANDROID', 'IOS', 'HARMONYOS', 'DESKTOP_WEB', 'MOBILE_WEB', 'WEB_STUDIO'].includes(String(payload.platform).toUpperCase())) {
+    return { valid: false, error: 'Invalid platform identifier.', code: 'INVALID_PLATFORM' };
+  }
+
   if (!consent || typeof consent !== 'object' || consent.consentVersion !== CURRENT_SCHEMA_VERSION) {
     return { valid: false, error: 'Valid user consent metadata is required to complete pairing.', code: 'MISSING_CONSENT' };
   }
@@ -197,6 +201,10 @@ export function validateTelemetrySummaryRequest(payload) {
 
   if (consentVersion !== CURRENT_SCHEMA_VERSION) {
     return { valid: false, error: 'Invalid or missing consentVersion.', code: 'INVALID_CONSENT_VERSION' };
+  }
+
+  if (payload.platform && !['ANDROID', 'IOS', 'HARMONYOS', 'DESKTOP_WEB', 'MOBILE_WEB', 'WEB_STUDIO'].includes(String(payload.platform).toUpperCase())) {
+    return { valid: false, error: 'Invalid platform identifier.', code: 'INVALID_PLATFORM' };
   }
 
   if (!observedWindow || typeof observedWindow !== 'object') {

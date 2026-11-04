@@ -42,6 +42,7 @@ import {
   notifyFocusCancelled,
   getTelemetryForSession,
   reconcileLateTelemetry,
+  fetchHistoricalTelemetryFromServer,
   isFocusIntegrityEnabled,
   getPairedDevice
 } from '../services/focusIntegrityService';
@@ -62,6 +63,7 @@ import { updateTrajectoryDestination } from '../utils/trajectoryResolver';
 import {
   enqueueMutation,
   executeSyncCycle,
+  initForegroundSync,
   getSyncMetadata,
   getOutboxCount,
   clearOutbox,
@@ -296,6 +298,15 @@ export const RoadmapProvider = ({ children, initialSubjects }) => {
     };
     window.addEventListener('learningTracker_identity_updated', handleIdentityUpdated);
     return () => window.removeEventListener('learningTracker_identity_updated', handleIdentityUpdated);
+  }, []);
+
+  // Graceful foreground synchronization fallback for platforms lacking Background Sync (iOS Safari, macOS Safari, Firefox)
+  useEffect(() => {
+    const cleanup = initForegroundSync(() => {
+      setSyncMetadata(getSyncMetadata());
+      setOutboxCount(getOutboxCount());
+    });
+    return () => cleanup && cleanup();
   }, []);
 
   // Persistence handler with quota error catching (per-key tracking)
@@ -2782,7 +2793,8 @@ export const RoadmapProvider = ({ children, initialSubjects }) => {
       }
 
       // Record canonical Focus Session record with Focus Integrity telemetry if available
-      const rawTelemetry = focusSession.sessionId ? getTelemetryForSession(focusSession.sessionId) : null;
+      const incomingTelemetry = reflectionData.companionTelemetry;
+      const rawTelemetry = incomingTelemetry || (focusSession.sessionId ? getTelemetryForSession(focusSession.sessionId) : null);
       const isTest = typeof process !== 'undefined' && process.env && process.env.NODE_ENV === 'test';
       const companionTelemetry = (isTest || rawTelemetry?.provenance === TELEMETRY_PROVENANCE.REAL_EXTERNAL_SOURCE) ? rawTelemetry : null;
       const sessionStartInstant = focusSession.initialStartTime
@@ -2912,6 +2924,53 @@ export const RoadmapProvider = ({ children, initialSubjects }) => {
       return result;
     } catch (err) {
       return { success: false, reason: 'EXCEPTION', error: err?.message, telemetry: null };
+    }
+  };
+
+  /**
+   * Fetches historical telemetry records from server and enriches any unlinked sessions
+   */
+  const syncHistoricalTelemetryFromServer = async (options = {}) => {
+    try {
+      const res = await fetchHistoricalTelemetryFromServer(options);
+      if (res?.success && Array.isArray(res.summaries)) {
+        let didChange = false;
+        setSessions(prevSessions => {
+          const updated = (prevSessions || []).map(session => {
+            const sessId = session.id || session.sessionId;
+            if (!session.companionTelemetry) {
+              const match = res.summaries.find(s => s.sessionId === sessId);
+              if (match) {
+                didChange = true;
+                const formatted = match.payload ? {
+                  ...match.payload,
+                  summaryId: match.summaryId,
+                  sessionId: match.sessionId,
+                  observedWindow: match.observedWindow,
+                  observedAt: match.observedAt,
+                  source: match.source,
+                  provenance: match.provenance || TELEMETRY_PROVENANCE.REAL_EXTERNAL_SOURCE
+                } : match;
+                return {
+                  ...session,
+                  companionTelemetry: formatted
+                };
+              }
+            }
+            return session;
+          });
+          if (didChange) {
+            persistState("sessions", updated);
+          }
+          return updated;
+        });
+        if (didChange) {
+          setAdaptiveTick(t => t + 1);
+        }
+      }
+      return res;
+    } catch (err) {
+      return { success: false, reason: 'EXCEPTION', error: err?.message };
     }
   };
 
@@ -3147,6 +3206,7 @@ export const RoadmapProvider = ({ children, initialSubjects }) => {
         resumeFocusFromBreak,
         reconcileSessionTelemetry,
         reconcileSessionTelemetryFromServer,
+        syncHistoricalTelemetryFromServer,
 
         // Notes management
         notes,

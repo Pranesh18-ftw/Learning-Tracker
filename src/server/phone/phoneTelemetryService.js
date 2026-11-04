@@ -13,6 +13,12 @@
  */
 
 import { validateTelemetrySummaryRequest } from './phoneValidation.js';
+import {
+  COMPANION_PLATFORMS,
+  TELEMETRY_GRANULARITY,
+  TELEMETRY_CONFIDENCE,
+  TELEMETRY_PROVENANCE
+} from '../../shared/focusIntegrityProtocol.js';
 
 /**
  * Ingests a FOCUS_WINDOW_SUMMARY from a paired companion device
@@ -43,7 +49,54 @@ export async function ingestTelemetrySummary(device, payload, repository) {
     }
   }
 
-  // 2. Server-Assigned Provenance & Receipt Metadata
+  // 2. Server-Side Derivation & Validation of Platform, Granularity & Confidence (Prompt #6)
+  const rawPlatform = payload.platform || device.platform || COMPANION_PLATFORMS.ANDROID;
+  const declaredPlatform = String(rawPlatform).toUpperCase();
+
+  let resolvedPlatform = COMPANION_PLATFORMS.ANDROID;
+  let monitoringGranularity = TELEMETRY_GRANULARITY.UNKNOWN;
+  let telemetryConfidence = TELEMETRY_CONFIDENCE.UNVERIFIED;
+  let source = 'UNVERIFIED_CLIENT';
+
+  const hasGenuineIntervals = Array.isArray(payload.timeline) && payload.timeline.length > 0;
+  const hasAppBreakdown = Array.isArray(payload.appBreakdown) && payload.appBreakdown.length > 0;
+
+  if (declaredPlatform === COMPANION_PLATFORMS.ANDROID) {
+    resolvedPlatform = COMPANION_PLATFORMS.ANDROID;
+    // Assign AUTHENTICATED_COMPANION_INTERVALS if accompanied by classified timeline intervals from authenticated device
+    if (hasGenuineIntervals) {
+      monitoringGranularity = TELEMETRY_GRANULARITY.INTERVAL_CLASSIFIED;
+      telemetryConfidence = TELEMETRY_CONFIDENCE.AUTHENTICATED_COMPANION_INTERVALS;
+      source = 'ANDROID_COMPANION_NATIVE';
+    } else if (hasAppBreakdown) {
+      monitoringGranularity = TELEMETRY_GRANULARITY.THRESHOLD_AGGREGATE;
+      telemetryConfidence = TELEMETRY_CONFIDENCE.AUTHENTICATED_COMPANION_INTERVALS;
+      source = 'ANDROID_COMPANION_NATIVE';
+    } else {
+      // Empty intervals / breakdown cannot be upgraded to authenticated companion intervals
+      monitoringGranularity = TELEMETRY_GRANULARITY.STUDIO_ONLY;
+      telemetryConfidence = TELEMETRY_CONFIDENCE.SELF_REPORTED;
+      source = 'ANDROID_STUDIO_FALLBACK';
+    }
+  } else if (declaredPlatform === COMPANION_PLATFORMS.IOS) {
+    resolvedPlatform = COMPANION_PLATFORMS.IOS;
+    // iOS Screen Time does NOT expose raw millisecond timeline package intervals.
+    // It provides threshold aggregate or shielded category summaries.
+    monitoringGranularity = TELEMETRY_GRANULARITY.THRESHOLD_AGGREGATE;
+    telemetryConfidence = TELEMETRY_CONFIDENCE.CATEGORY_SHIELDED;
+    source = 'IOS_COMPANION_SCREENTIME';
+  } else if ([COMPANION_PLATFORMS.HARMONYOS, COMPANION_PLATFORMS.WEB_STUDIO, COMPANION_PLATFORMS.DESKTOP_WEB, COMPANION_PLATFORMS.MOBILE_WEB].includes(declaredPlatform)) {
+    resolvedPlatform = declaredPlatform;
+    monitoringGranularity = TELEMETRY_GRANULARITY.STUDIO_ONLY;
+    telemetryConfidence = TELEMETRY_CONFIDENCE.SELF_REPORTED;
+    source = declaredPlatform;
+  } else {
+    resolvedPlatform = 'UNKNOWN';
+    monitoringGranularity = TELEMETRY_GRANULARITY.UNKNOWN;
+    telemetryConfidence = TELEMETRY_CONFIDENCE.UNVERIFIED;
+    source = 'UNVERIFIED_CLIENT';
+  }
+
   const now = Date.now();
   const summaryRecord = {
     summaryId,
@@ -51,14 +104,20 @@ export async function ingestTelemetrySummary(device, payload, repository) {
     ownerUid,
     sessionId: sessionId || null,
     schemaVersion,
+    platform: resolvedPlatform,
+    monitoringGranularity,
+    telemetryConfidence,
+    source,
+    provenance: (telemetryConfidence === TELEMETRY_CONFIDENCE.HARDWARE_VERIFIED || telemetryConfidence === TELEMETRY_CONFIDENCE.CATEGORY_SHIELDED)
+      ? TELEMETRY_PROVENANCE.REAL_EXTERNAL_SOURCE
+      : (telemetryConfidence === TELEMETRY_CONFIDENCE.SELF_REPORTED ? 'SELF_REPORTED' : 'UNVERIFIED_SOURCE'),
     observedWindow,
     observedAt: observedWindow.endedAt || now,
     receivedAt: now,
-    source: 'ANDROID_COMPANION_NATIVE',
-    provenance: 'REAL_EXTERNAL_SOURCE',
     consentVersion,
     payload: {
       ...activitySummary,
+      timeline: payload.timeline || activitySummary.timeline || [],
       appBreakdown: payload.appBreakdown || activitySummary.appBreakdown || []
     },
     reconciled: false,
@@ -75,6 +134,24 @@ export async function ingestTelemetrySummary(device, payload, repository) {
       code: result.code,
       statusCode: 409
     };
+  }
+
+  // If a timeline is provided and repository supports saveSessionTimeline, persist it
+  if (summaryRecord.sessionId && summaryRecord.payload.timeline?.length && typeof repository.saveSessionTimeline === 'function') {
+    try {
+      await repository.saveSessionTimeline(summaryRecord.sessionId, {
+        ownerUid,
+        deviceId: device.deviceId,
+        snapshotVersion: 9999,
+        timestamp: now,
+        intervals: summaryRecord.payload.timeline,
+        observedWindow,
+        distractionCount: summaryRecord.payload.interruptionCount || 0,
+        distractionDurationSeconds: summaryRecord.payload.distractionSeconds || 0,
+        focusedDurationSeconds: Math.max(0, (summaryRecord.payload.observedSeconds || 0) - (summaryRecord.payload.distractionSeconds || 0)),
+        isFinal: true
+      });
+    } catch (_) {}
   }
 
   return {
@@ -101,6 +178,24 @@ export async function getTelemetryForSession(ownerUid, sessionId, repository) {
   return {
     success: true,
     telemetry: record || null
+  };
+}
+/**
+ * Lists all historical telemetry summaries for the authenticated owner
+ */
+export async function listOwnerTelemetryHistory(ownerUid, repository, options = {}) {
+  if (!ownerUid) {
+    return { success: false, error: 'Authentication required.', code: 'UNAUTHORIZED', statusCode: 401, summaries: [] };
+  }
+
+  const records = typeof repository.listTelemetryByOwner === 'function'
+    ? await repository.listTelemetryByOwner(ownerUid, options)
+    : [];
+
+  return {
+    success: true,
+    count: records.length,
+    summaries: records
   };
 }
 

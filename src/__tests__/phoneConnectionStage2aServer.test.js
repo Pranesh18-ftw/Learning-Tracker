@@ -630,8 +630,14 @@ describe('Phone Connection v1 — Stage 2A Server & Session Relay Test Suite', (
           interruptionSeconds: 40,
           referenceSeconds: 100,
           distractionSeconds: 40,
-          longestUninterruptedSeconds: 1360
+          longestUninterruptedSeconds: 1360,
+          appBreakdown: [
+            { packageName: 'com.instagram.android', category: 'distraction', durationSeconds: 40 }
+          ]
         },
+        appBreakdown: [
+          { packageName: 'com.instagram.android', category: 'distraction', durationSeconds: 40 }
+        ],
         consentVersion: CURRENT_SCHEMA_VERSION
       };
 

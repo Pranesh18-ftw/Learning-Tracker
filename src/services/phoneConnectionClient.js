@@ -22,6 +22,10 @@ function getApiBaseUrl() {
   if (typeof process !== 'undefined' && process.env && process.env.REACT_APP_PHONE_API_URL) {
     return process.env.REACT_APP_PHONE_API_URL;
   }
+  const isTest = typeof process !== 'undefined' && process.env && process.env.NODE_ENV === 'test';
+  if (!isTest && typeof window !== 'undefined' && window.location && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+    return 'https://deploy-preview-2--learningtracker001.netlify.app/api/v1/phone';
+  }
   return DEFAULT_API_BASE;
 }
 
@@ -498,3 +502,112 @@ export async function deletePhoneTelemetry() {
     return { success: false, reason: 'NETWORK_UNAVAILABLE' };
   }
 }
+
+/**
+ * Retrieves the live or completed attention timeline for a session
+ */
+export async function fetchSessionTimeline(sessionId) {
+  if (!sessionId) {
+    return { success: false, error: 'Session ID is required.', timeline: null };
+  }
+
+  const authHeader = await getAuthHeader();
+  if (!authHeader) {
+    return { success: false, reason: 'LOCAL_MODE_UNAUTHENTICATED', error: 'Authentication required.', timeline: null };
+  }
+
+  const url = `${getApiBaseUrl()}/focus-sessions/${encodeURIComponent(sessionId)}/timeline`;
+  try {
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: {
+        Authorization: authHeader
+      }
+    });
+
+    if (!res.ok) {
+      return { success: false, status: res.status, timeline: null };
+    }
+
+    const data = await res.json().catch(() => ({}));
+    return {
+      success: true,
+      sessionId,
+      timeline: data.timeline || null
+    };
+  } catch (err) {
+    return {
+      success: false,
+      reason: 'NETWORK_UNAVAILABLE',
+      error: 'Network connection unavailable.',
+      timeline: null
+    };
+  }
+}
+
+/**
+ * Posts an incremental timeline snapshot (used by tests or web simulation)
+ */
+export async function postSessionTimeline(sessionId, snapshot) {
+  if (!sessionId || !snapshot) {
+    return { success: false, error: 'Session ID and snapshot required.' };
+  }
+
+  const authHeader = await getAuthHeader();
+  if (!authHeader) {
+    return { success: false, reason: 'LOCAL_MODE_UNAUTHENTICATED' };
+  }
+
+  const url = `${getApiBaseUrl()}/focus-sessions/${encodeURIComponent(sessionId)}/timeline`;
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: authHeader
+      },
+      body: JSON.stringify(snapshot)
+    });
+
+    if (!res.ok) {
+      return { success: false, status: res.status };
+    }
+
+    const data = await res.json().catch(() => ({}));
+    return { success: true, ...data };
+  } catch (err) {
+    return { success: false, reason: 'NETWORK_UNAVAILABLE' };
+  }
+}
+
+/**
+ * Fetches all historical telemetry summaries for the authenticated user
+ */
+export async function fetchTelemetryHistory(options = {}) {
+  const authHeader = await getAuthHeader(options);
+  if (!authHeader) {
+    return { success: false, error: 'Authentication required.', summaries: [] };
+  }
+
+  const limit = options.limit || 100;
+  const url = `${getApiBaseUrl()}/telemetry/history?limit=${encodeURIComponent(limit)}`;
+  try {
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: {
+        Authorization: authHeader
+      }
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      return { success: false, error: data.error || `HTTP ${res.status}`, summaries: [] };
+    }
+
+    return { success: true, count: data.count || 0, summaries: data.summaries || [] };
+  } catch (err) {
+    return { success: false, error: 'Network error fetching telemetry history.', summaries: [] };
+  }
+}
+
+

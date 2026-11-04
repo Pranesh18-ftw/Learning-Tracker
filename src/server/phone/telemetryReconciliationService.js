@@ -112,8 +112,11 @@ export function formatNormalizedTelemetryResponse(record) {
     distractionSeconds: toNonNegativeNumberOrZero(p.distractionSeconds),
     unknownSeconds: toNonNegativeNumberOrZero(p.unknownSeconds),
     longestUninterruptedSeconds: toNonNegativeNumberOrZero(p.longestUninterruptedSeconds),
+    platform: record.platform || 'ANDROID',
+    monitoringGranularity: record.monitoringGranularity || 'UNKNOWN',
+    telemetryConfidence: record.telemetryConfidence || 'UNVERIFIED',
     source: record.source || 'ANDROID_COMPANION_NATIVE',
-    provenance: 'REAL_EXTERNAL_SOURCE',
+    provenance: record.provenance || 'REAL_EXTERNAL_SOURCE',
     observedAt: record.observedAt,
     receivedAt: record.receivedAt,
     reconciled: Boolean(record.reconciled),
@@ -122,6 +125,17 @@ export function formatNormalizedTelemetryResponse(record) {
           packageName: item.packageName,
           category: String(item.category || 'unknown').toLowerCase(),
           durationSeconds: Number(item.durationSeconds || 0)
+        }))
+      : [],
+    timeline: Array.isArray(p.timeline)
+      ? p.timeline.map(t => ({
+          type: String(t.type || 'FOCUSED'),
+          startTimeMs: Number(t.startTimeMs || 0),
+          endTimeMs: Number(t.endTimeMs || 0),
+          durationSeconds: Number(t.durationSeconds || 0),
+          packageName: t.packageName ? String(t.packageName) : null,
+          appName: t.appName ? String(t.appName) : null,
+          category: t.category ? String(t.category) : null
         }))
       : []
   };

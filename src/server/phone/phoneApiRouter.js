@@ -36,6 +36,7 @@ import {
 } from './focusSessionRelayService.js';
 import {
   ingestTelemetrySummary,
+  listOwnerTelemetryHistory,
   deleteOwnerTelemetry
 } from './phoneTelemetryService.js';
 import {
@@ -273,7 +274,96 @@ export async function handlePhoneApiRequest(event, injectedRepo = null) {
       return jsonResponse(result.statusCode || (result.success ? 200 : 400), result);
     }
 
-    // ── ROUTE 10: DELETE /telemetry ──
+    // ── ROUTE 9b: POST/GET /focus-sessions/:sessionId/timeline ──
+    const sessionTimelineMatch = path.match(/^\/focus-sessions\/([^/]+)\/timeline$/);
+    if (sessionTimelineMatch) {
+      const targetSessionId = decodeURIComponent(sessionTimelineMatch[1]);
+      let ownerUid = null;
+      let deviceId = 'web_client';
+      const deviceAuth = await authenticateDeviceRequest(authHeader, repository);
+      if (deviceAuth.authenticated) {
+        ownerUid = deviceAuth.ownerUid;
+        deviceId = deviceAuth.device?.deviceId || 'companion_device';
+      } else {
+        const webAuth = await authenticateWebRequest(authHeader);
+        if (webAuth.authenticated) {
+          ownerUid = webAuth.uid;
+        }
+      }
+
+      if (!ownerUid) {
+        return jsonResponse(401, { error: 'Authentication required for session timeline.', code: 'UNAUTHORIZED' });
+      }
+
+      if (method === 'POST') {
+        const snapshotRecord = {
+          sessionId: targetSessionId,
+          ownerUid,
+          deviceId,
+          snapshotVersion: Number(body.snapshotVersion) || 1,
+          timestamp: Number(body.timestamp) || Date.now(),
+          intervals: Array.isArray(body.intervals) ? body.intervals : [],
+          observedWindow: body.observedWindow || null,
+          distractionCount: Number(body.distractionCount) || 0,
+          distractionDurationSeconds: Number(body.distractionDurationSeconds) || 0,
+          focusedDurationSeconds: Number(body.focusedDurationSeconds) || 0,
+          isFinal: Boolean(body.isFinal)
+        };
+
+        if (typeof repository.saveSessionTimeline === 'function') {
+          await repository.saveSessionTimeline(targetSessionId, snapshotRecord);
+        }
+
+        return jsonResponse(200, {
+          success: true,
+          sessionId: targetSessionId,
+          snapshotVersion: snapshotRecord.snapshotVersion,
+          timestamp: snapshotRecord.timestamp,
+          intervalCount: snapshotRecord.intervals.length,
+          isFinal: snapshotRecord.isFinal
+        });
+      }
+
+      if (method === 'GET') {
+        let timeline = typeof repository.getSessionTimeline === 'function'
+          ? await repository.getSessionTimeline(targetSessionId)
+          : null;
+
+        if (!timeline) {
+          const summary = await repository.getTelemetryBySessionId(targetSessionId, ownerUid);
+          if (summary && summary.payload?.timeline) {
+            timeline = {
+              sessionId: targetSessionId,
+              intervals: summary.payload.timeline,
+              observedWindow: summary.observedWindow,
+              distractionCount: summary.payload.interruptionCount || 0,
+              distractionDurationSeconds: summary.payload.distractionSeconds || 0,
+              focusedDurationSeconds: Math.max(0, (summary.payload.observedSeconds || 0) - (summary.payload.distractionSeconds || 0)),
+              isFinal: true
+            };
+          }
+        }
+
+        return jsonResponse(200, {
+          success: true,
+          sessionId: targetSessionId,
+          timeline: timeline || null
+        });
+      }
+    }
+
+    // ── ROUTE 10: GET /telemetry/history ──
+    if (method === 'GET' && path === '/telemetry/history') {
+      const auth = await authenticateWebRequest(authHeader);
+      if (!auth.authenticated) {
+        return jsonResponse(auth.statusCode || 401, { error: auth.error, code: auth.code });
+      }
+      const limit = Number(event.queryStringParameters?.limit) || 100;
+      const result = await listOwnerTelemetryHistory(auth.uid, repository, { limit });
+      return jsonResponse(200, result);
+    }
+
+    // ── ROUTE 10b: DELETE /telemetry ──
     if (method === 'DELETE' && path === '/telemetry') {
       const auth = await authenticateWebRequest(authHeader);
       if (!auth.authenticated) {

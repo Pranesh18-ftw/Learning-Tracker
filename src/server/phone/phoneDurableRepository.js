@@ -367,6 +367,24 @@ export class FirestorePhoneRepository {
     return summary;
   }
 
+  async saveSessionTimeline(sessionId, snapshot) {
+    const db = this._getDb();
+    const docRef = db.collection('phone_focus_timelines').doc(sessionId);
+    const record = {
+      sessionId,
+      ...snapshot,
+      updatedAt: Date.now()
+    };
+    await docRef.set(record, { merge: true });
+    return record;
+  }
+
+  async getSessionTimeline(sessionId) {
+    const db = this._getDb();
+    const doc = await db.collection('phone_focus_timelines').doc(sessionId).get();
+    return doc.exists ? doc.data() : null;
+  }
+
   async getTelemetrySummary(summaryId) {
     const db = this._getDb();
     const doc = await db.collection('phone_telemetry_summaries').doc(summaryId).get();
@@ -406,6 +424,17 @@ export class FirestorePhoneRepository {
       transaction.set(ref, summaryRecord);
       return { success: true, idempotent: false, record: summaryRecord };
     });
+  }
+
+  async listTelemetryByOwner(ownerUid, { limit = 100 } = {}) {
+    const db = this._getDb();
+    const snapshot = await db.collection('phone_telemetry_summaries')
+      .where('ownerUid', '==', ownerUid)
+      .limit(limit)
+      .get();
+    return snapshot.docs
+      .map(d => d.data())
+      .sort((a, b) => (b.receivedAt || b.createdAt || 0) - (a.receivedAt || a.createdAt || 0));
   }
 
   async deleteTelemetryByOwner(ownerUid) {
@@ -468,6 +497,7 @@ export function createInMemoryPhoneRepository() {
   const credentials = new Map();
   const sessions = new Map();
   const telemetry = new Map();
+  const timelines = new Map();
   const rateLimits = new Map();
 
   return {
@@ -664,6 +694,23 @@ export function createInMemoryPhoneRepository() {
       return summary;
     },
 
+    saveSessionTimeline: async (sessionId, snapshot) => {
+      const existing = timelines.get(sessionId) || {};
+      const record = {
+        sessionId,
+        ...existing,
+        ...snapshot,
+        updatedAt: Date.now()
+      };
+      timelines.set(sessionId, record);
+      return { ...record };
+    },
+
+    getSessionTimeline: async (sessionId) => {
+      const record = timelines.get(sessionId);
+      return record ? { ...record } : null;
+    },
+
     ingestTelemetrySummaryTransaction: async (summaryRecord) => {
       const existing = telemetry.get(summaryRecord.summaryId);
       if (existing) {
@@ -693,6 +740,18 @@ export function createInMemoryPhoneRepository() {
         }
       }
       return null;
+    },
+
+    listTelemetryByOwner: async (ownerUid, { limit = 100 } = {}) => {
+      const results = [];
+      for (const t of telemetry.values()) {
+        if (t.ownerUid === ownerUid) {
+          results.push({ ...t });
+        }
+      }
+      return results
+        .sort((a, b) => (b.receivedAt || b.createdAt || 0) - (a.receivedAt || a.createdAt || 0))
+        .slice(0, limit);
     },
 
     deleteTelemetryByOwner: async (ownerUid) => {
