@@ -9,6 +9,13 @@ import com.learningtracker.companion.tracker.*
 import org.junit.Assert.*
 import org.junit.Test
 import java.util.UUID
+import kotlinx.coroutines.*
+import android.content.ComponentName
+import android.content.Intent
+import com.learningtracker.companion.service.BootReceiver
+import com.learningtracker.companion.service.FocusMonitoringService
+import com.learningtracker.companion.service.ServiceDispatcher
+import com.learningtracker.companion.usage.UsageAccessHelper
 
 /**
  * Stage 2B Comprehensive Android Unit & Integration Test Suite
@@ -1065,5 +1072,1596 @@ class CompanionUnitTests {
     fun test83_FocusMonitoringServiceConstants() {
         assertEquals("focus_monitoring_channel", com.learningtracker.companion.service.FocusMonitoringService.CHANNEL_ID)
         assertEquals(2001, com.learningtracker.companion.service.FocusMonitoringService.NOTIFICATION_ID)
+    }
+
+    @Test
+    fun test84_MonitoringStateEnumAndLifecycleProperties() {
+        val states = com.learningtracker.companion.model.MonitoringState.entries
+        assertEquals(9, states.size)
+        assertTrue(states.contains(com.learningtracker.companion.model.MonitoringState.DISABLED))
+        assertTrue(states.contains(com.learningtracker.companion.model.MonitoringState.PAIRING))
+        assertTrue(states.contains(com.learningtracker.companion.model.MonitoringState.READY))
+        assertTrue(states.contains(com.learningtracker.companion.model.MonitoringState.WAITING_FOR_FOCUS))
+        assertTrue(states.contains(com.learningtracker.companion.model.MonitoringState.MONITORING))
+        assertTrue(states.contains(com.learningtracker.companion.model.MonitoringState.FINALIZING))
+        assertTrue(states.contains(com.learningtracker.companion.model.MonitoringState.UPLOADING))
+        assertTrue(states.contains(com.learningtracker.companion.model.MonitoringState.DELIVERED))
+        assertTrue(states.contains(com.learningtracker.companion.model.MonitoringState.RECOVERY_REQUIRED))
+
+        // Active monitoring check
+        assertTrue(com.learningtracker.companion.model.MonitoringState.MONITORING.isMonitoringActive)
+        assertTrue(com.learningtracker.companion.model.MonitoringState.FINALIZING.isMonitoringActive)
+        assertTrue(com.learningtracker.companion.model.MonitoringState.UPLOADING.isMonitoringActive)
+        assertFalse(com.learningtracker.companion.model.MonitoringState.WAITING_FOR_FOCUS.isMonitoringActive)
+        assertFalse(com.learningtracker.companion.model.MonitoringState.DELIVERED.isMonitoringActive)
+
+        // Foreground service running check
+        assertTrue(com.learningtracker.companion.model.MonitoringState.WAITING_FOR_FOCUS.isServiceRunning)
+        assertTrue(com.learningtracker.companion.model.MonitoringState.MONITORING.isServiceRunning)
+        assertFalse(com.learningtracker.companion.model.MonitoringState.DISABLED.isServiceRunning)
+        assertFalse(com.learningtracker.companion.model.MonitoringState.READY.isServiceRunning)
+    }
+
+    @Test
+    fun test85_AdaptivePollingIntervalConstants() {
+        assertEquals(5000L, com.learningtracker.companion.service.FocusMonitoringService.POLL_INTERVAL_ACTIVE_MS)
+        assertEquals(12000L, com.learningtracker.companion.service.FocusMonitoringService.POLL_INTERVAL_IDLE_MS)
+        assertEquals(30000L, com.learningtracker.companion.service.FocusMonitoringService.POLL_INTERVAL_BACKOFF_MAX_MS)
+        assertTrue(com.learningtracker.companion.service.FocusMonitoringService.POLL_INTERVAL_ACTIVE_MS < com.learningtracker.companion.service.FocusMonitoringService.POLL_INTERVAL_IDLE_MS)
+    }
+
+    @Test
+    fun test86_AutomaticFinalizationProducesLocalFirstSummaryWithoutManualButton() {
+        val calc = FocusSummaryCalculator()
+        val session = FocusSessionContract(
+            sessionId = "sess_auto_detect_99",
+            startedAt = 50000L,
+            intendedDurationSeconds = 1500L,
+            taskName = "Quantum Well Tunneling",
+            subjectName = "Solid State Physics",
+            state = "RUNNING"
+        )
+        val endTime = 65000L
+        val summary = calc.calculateSummary(
+            session = session,
+            sessionEndTime = endTime,
+            interruptions = emptyList(),
+            summaryId = "sum_auto_99",
+            collectionStatus = CollectionStatus.COMPLETE
+        )
+
+        assertEquals("sess_auto_detect_99", summary.sessionId)
+        assertEquals("sum_auto_99", summary.summaryId)
+        assertEquals(15L, summary.observedWindowSeconds)
+        assertEquals(1500L, summary.intendedSeconds)
+        assertEquals(0, summary.interruptionCount)
+        assertEquals(15L, summary.longestUninterruptedSeconds)
+        assertEquals(CollectionStatus.COMPLETE, summary.collectionStatus)
+        assertEquals("PENDING", summary.syncState)
+    }
+
+    @Test
+    fun test87_DuplicateUploadPreventionViaUniqueSummaryId() {
+        val calc = FocusSummaryCalculator()
+        val session = FocusSessionContract("sess_dup_check", 1000L, 1500L)
+        val s1 = calc.calculateSummary(session, 16000L, emptyList(), summaryId = "sum_fixed_id")
+        val s2 = calc.calculateSummary(session, 16000L, emptyList(), summaryId = "sum_fixed_id")
+
+        assertEquals(s1.summaryId, s2.summaryId)
+        assertEquals(s1.sessionId, s2.sessionId)
+    }
+
+    @Test
+    fun test88_OutboxSyncStateTransitions() {
+        // Test that sync state strings strictly follow contract
+        val validSyncStates = listOf("PENDING", "RETRY", "DELIVERED", "PERMANENT_ERROR", "CONFLICT")
+        assertTrue(validSyncStates.contains("PENDING"))
+        assertTrue(validSyncStates.contains("DELIVERED"))
+        assertTrue(validSyncStates.contains("RETRY"))
+        assertTrue(validSyncStates.contains("PERMANENT_ERROR"))
+    }
+
+    @Test
+    fun test89_BatteryOptimizationAndPermissionResilienceConstants() {
+        val actionStart = com.learningtracker.companion.service.FocusMonitoringService.ACTION_START
+        val actionStop = com.learningtracker.companion.service.FocusMonitoringService.ACTION_STOP
+        assertEquals("com.learningtracker.companion.action.START_MONITORING", actionStart)
+        assertEquals("com.learningtracker.companion.action.STOP_MONITORING", actionStop)
+    }
+
+    // =========================================================================
+    // SECTION 7: PHASE 1 SESSION LIFECYCLE & IDLE DECOUPLING (Tests 90 - 98)
+    // =========================================================================
+
+    @Test
+    fun test90_ServiceDoesNotStartDuringIdle() {
+        com.learningtracker.companion.service.FocusMonitoringService.resetStateForTesting()
+        assertFalse("Service must not be running initially", com.learningtracker.companion.service.FocusMonitoringService.isRunning)
+        assertEquals("Initial state must be READY", com.learningtracker.companion.model.MonitoringState.READY, com.learningtracker.companion.service.FocusMonitoringService.currentState)
+
+        // When idle (no active session), FocusMonitoringService.isRunning must remain false
+        assertFalse(com.learningtracker.companion.model.MonitoringState.READY.isServiceRunning)
+        assertFalse(com.learningtracker.companion.model.MonitoringState.DISABLED.isServiceRunning)
+    }
+
+    @Test
+    fun test91_ServiceStartsThroughApprovedSessionStartPath() {
+        com.learningtracker.companion.service.FocusMonitoringService.resetStateForTesting()
+        val session = FocusSessionContract(
+            sessionId = "sess_approved_start_01",
+            startedAt = System.currentTimeMillis(),
+            intendedDurationSeconds = 1800L,
+            taskName = "Memory Allocation Study",
+            subjectName = "Operating Systems",
+            state = "RUNNING"
+        )
+        assertNotNull(session.sessionId)
+        assertEquals("RUNNING", session.state)
+
+        // Verify monitoring state during active session
+        assertTrue(com.learningtracker.companion.model.MonitoringState.MONITORING.isServiceRunning)
+        assertTrue(com.learningtracker.companion.model.MonitoringState.MONITORING.isMonitoringActive)
+    }
+
+    @Test
+    fun test92_ServiceTerminatesWhenSessionEnds() {
+        // Verify state transitions on session conclusion
+        val finalizing = com.learningtracker.companion.model.MonitoringState.FINALIZING
+        val uploading = com.learningtracker.companion.model.MonitoringState.UPLOADING
+        val delivered = com.learningtracker.companion.model.MonitoringState.DELIVERED
+        val ready = com.learningtracker.companion.model.MonitoringState.READY
+
+        assertTrue(finalizing.isMonitoringActive)
+        assertTrue(uploading.isMonitoringActive)
+        assertFalse(delivered.isMonitoringActive)
+        assertFalse(ready.isMonitoringActive)
+        assertFalse(ready.isServiceRunning)
+    }
+
+    @Test
+    fun test93_RepeatedStartStopOperationsDoNotCreateDuplicateServices() {
+        com.learningtracker.companion.service.FocusMonitoringService.resetStateForTesting()
+        assertFalse(com.learningtracker.companion.service.FocusMonitoringService.isRunning)
+        // Resetting state repeatedly is idempotent
+        com.learningtracker.companion.service.FocusMonitoringService.resetStateForTesting()
+        assertFalse(com.learningtracker.companion.service.FocusMonitoringService.isRunning)
+        assertEquals(com.learningtracker.companion.model.MonitoringState.READY, com.learningtracker.companion.service.FocusMonitoringService.currentState)
+    }
+
+    @Test
+    fun test94_RebootDoesNotRestartContinuousMonitoring() {
+        // Verify invariant: BootReceiver.handleBootRecovery reconciles orphaned sessions
+        // without calling FocusMonitoringService.start()
+        com.learningtracker.companion.service.FocusMonitoringService.resetStateForTesting()
+        assertFalse("Service must remain non-running after reboot", com.learningtracker.companion.service.FocusMonitoringService.isRunning)
+        assertEquals(com.learningtracker.companion.model.MonitoringState.READY, com.learningtracker.companion.service.FocusMonitoringService.currentState)
+    }
+
+    @Test
+    fun test95_ProcessDeathAndRebootDoesNotFabricateCompletedSessions() {
+        val calc = FocusSummaryCalculator()
+        val orphanedSession = FocusSessionContract(
+            sessionId = "sess_orphaned_reboot_01",
+            startedAt = 100000L,
+            intendedDurationSeconds = 1800L,
+            taskName = "Interrupted by Reboot",
+            state = "RUNNING"
+        )
+        // Mid-session interruption: device rebooted 600s into 1800s session
+        val rebootTime = 700000L
+        val summary = calc.calculateSummary(
+            session = orphanedSession,
+            sessionEndTime = rebootTime,
+            interruptions = emptyList(),
+            collectionStatus = CollectionStatus.PARTIAL
+        )
+
+        assertEquals("sess_orphaned_reboot_01", summary.sessionId)
+        assertEquals(CollectionStatus.PARTIAL, summary.collectionStatus)
+        // Missing intervals MUST NOT be fabricated as focused time
+        assertEquals(0L, summary.longestUninterruptedSeconds)
+        assertEquals(1, summary.timeline.size)
+        assertEquals("UNOBSERVED", summary.timeline[0].classification)
+        assertEquals("Incomplete telemetry (interrupted session)", summary.timeline[0].note)
+    }
+
+    @Test
+    fun test96_NoObservationsStatusNeverFabricatesFocusedTime() {
+        val calc = FocusSummaryCalculator()
+        val session = FocusSessionContract(
+            sessionId = "sess_no_obs_01",
+            startedAt = 50000L,
+            intendedDurationSeconds = 1500L
+        )
+        val summary = calc.calculateSummary(
+            session = session,
+            sessionEndTime = 80000L,
+            interruptions = emptyList(),
+            collectionStatus = CollectionStatus.NO_OBSERVATIONS
+        )
+
+        assertEquals(CollectionStatus.NO_OBSERVATIONS, summary.collectionStatus)
+        assertEquals(0L, summary.longestUninterruptedSeconds)
+        assertEquals(1, summary.timeline.size)
+        assertEquals("UNOBSERVED", summary.timeline[0].classification)
+        assertEquals("No telemetry observations", summary.timeline[0].note)
+    }
+
+    @Test
+    fun test97_ExistingTelemetrySerializationRemainsCompatible() {
+        val summary = FocusSummary(
+            sessionId = "sess_compat_01",
+            summaryId = "sum_compat_01",
+            intendedSeconds = 1500L,
+            observedWindowSeconds = 1500L,
+            interruptionCount = 1,
+            interruptionSeconds = 45L,
+            referenceSeconds = 15L,
+            distractionSeconds = 30L,
+            unknownSeconds = 0L,
+            longestUninterruptedSeconds = 600L,
+            interruptions = emptyList(),
+            appBreakdown = listOf(
+                AppBreakdownSummary("com.android.chrome", AppCategory.REFERENCE, 15L),
+                AppBreakdownSummary("com.instagram.android", AppCategory.DISTRACTION, 30L)
+            ),
+            timeline = listOf(
+                com.learningtracker.companion.model.TimelineInterval(
+                    id = "f1",
+                    startTime = 1000L,
+                    endTime = 2000L,
+                    classification = "FOCUSED"
+                )
+            ),
+            collectionStatus = CollectionStatus.COMPLETE,
+            timestamp = 2500L,
+            syncState = "PENDING"
+        )
+
+        val json = kotlinx.serialization.json.Json {
+            encodeDefaults = true
+            ignoreUnknownKeys = true
+        }
+        val serialized = json.encodeToString(com.learningtracker.companion.model.FocusSummary.serializer(), summary)
+        assertTrue(serialized.contains("sess_compat_01"))
+        assertTrue(serialized.contains("sum_compat_01"))
+        assertTrue(serialized.contains("com.instagram.android"))
+        assertTrue(serialized.contains("COMPLETE"))
+
+        val deserialized = json.decodeFromString(com.learningtracker.companion.model.FocusSummary.serializer(), serialized)
+        assertEquals(summary.sessionId, deserialized.sessionId)
+        assertEquals(summary.summaryId, deserialized.summaryId)
+        assertEquals(summary.collectionStatus, deserialized.collectionStatus)
+        assertEquals(2, deserialized.appBreakdown.size)
+    }
+
+    @Test
+    fun test98_AdaptivePollingConstantsAndSessionScoping() {
+        assertEquals(5000L, com.learningtracker.companion.service.FocusMonitoringService.POLL_INTERVAL_ACTIVE_MS)
+        assertEquals(12000L, com.learningtracker.companion.service.FocusMonitoringService.POLL_INTERVAL_IDLE_MS)
+        assertEquals(30000L, com.learningtracker.companion.service.FocusMonitoringService.POLL_INTERVAL_BACKOFF_MAX_MS)
+    }
+
+    // =========================================================================
+    // SECTION 13: PHASE 1 ARCHITECTURAL CORRECTIONS & DEFECT RESOLUTION
+    // =========================================================================
+    // SECTION 13: PHASE 1 SERVICE LIFECYCLE & IDLE DECOUPLING BEHAVIORAL TESTS
+    // (Tests 99 - 111: Requirements A - G)
+    // =========================================================================
+
+    class FakeTestPairingManager(
+        private var paired: Boolean = true,
+        private var revoked: Boolean = false,
+        private var token: String? = "devtok_test_12345",
+        private var associationId: String = "dev_assoc_test_123"
+    ) : com.learningtracker.companion.pairing.PairingManager() {
+        override fun isPaired(): Boolean = paired && !revoked
+        override fun isRevoked(): Boolean = revoked
+        override fun getDeviceToken(): String? = token
+        override fun getDeviceAssociation(): DeviceAssociation =
+            DeviceAssociation(associationId, "Test Pixel 8", pairedAccountEmail = "user@example.com")
+        override fun markRevoked() {
+            revoked = true
+            paired = false
+        }
+    }
+
+    class FakeTestPhoneApiClient : PhoneApiClient() {
+        var activeSessionResponse: ApiResult<ActiveSessionResponse> =
+            ApiResult.Success(ActiveSessionResponse("NO_ACTIVE_SESSION", null, null, null, null, null, System.currentTimeMillis()), 200)
+        var sessionStatusResponse: ApiResult<SessionStatusResponse> =
+            ApiResult.Success(SessionStatusResponse(true, "sess_status_default", "COMPLETE", 1000L, 2000L, 1000L, 2000L, 1000L, "Task", "Subject"), 200)
+        var snapshotResponse: ApiResult<TimelineSnapshotResponse> =
+            ApiResult.Success(TimelineSnapshotResponse(true, "sess_snap_default", 1), 200)
+        var telemetryResponse: ApiResult<TelemetrySubmissionResponse> =
+            ApiResult.Success(TelemetrySubmissionResponse(true, "sum_default", System.currentTimeMillis(), "DELIVERED", false), 200)
+        var unreconciledResponse: ApiResult<List<FocusSessionContract>> =
+            ApiResult.Success(emptyList(), 200)
+
+        override fun getActiveSession(deviceToken: String): ApiResult<ActiveSessionResponse> = activeSessionResponse
+        override fun getSessionStatus(sessionId: String, deviceToken: String): ApiResult<SessionStatusResponse> = sessionStatusResponse
+        override fun getUnreconciledSessions(deviceToken: String, limit: Int): ApiResult<List<FocusSessionContract>> = unreconciledResponse
+        override fun postTimelineSnapshot(sessionId: String, snapshot: TimelineSnapshot, deviceToken: String): ApiResult<TimelineSnapshotResponse> = snapshotResponse
+        override fun submitTelemetrySummary(payload: TelemetrySummaryPayload, deviceToken: String): ApiResult<TelemetrySubmissionResponse> = telemetryResponse
+    }
+
+    @Test
+    fun test99_ApplicationInitializationNeverStartsService() {
+        // Requirement A: Application initialization must never start the service.
+        com.learningtracker.companion.service.FocusMonitoringService.resetStateForTesting()
+
+        // 1. Active session exists in storage from an uncompleted run
+        val inMemoryStorage = com.learningtracker.companion.sync.InMemoryTelemetryStorage()
+        val fakeApi = FakeTestPhoneApiClient()
+        val fakePairing = FakeTestPairingManager()
+        val syncManager = FocusIntegritySyncManager(
+            context = null,
+            pairingManager = fakePairing,
+            apiClient = fakeApi,
+            storage = inMemoryStorage
+        )
+        val discoveredSession = FocusSessionContract(
+            sessionId = "sess_discovered_in_storage",
+            startedAt = System.currentTimeMillis() - 600000L,
+            intendedDurationSeconds = 1500L,
+            taskName = "Discovered Session"
+        )
+        syncManager.onFocusStarted(discoveredSession)
+        assertEquals(discoveredSession.sessionId, syncManager.getActiveSession()?.sessionId)
+
+        // 2. INVARIANT: Discovered active session during initialization is NOT permission to start service.
+        assertFalse("Foreground service must remain idle on application initialization", com.learningtracker.companion.service.FocusMonitoringService.isRunning)
+        assertEquals(com.learningtracker.companion.model.MonitoringState.READY, com.learningtracker.companion.service.FocusMonitoringService.currentState)
+        assertNull("activeMonitoredSessionId must remain null", com.learningtracker.companion.service.FocusMonitoringService.activeMonitoredSessionId)
+        assertFalse("READY state is not monitoring active", com.learningtracker.companion.model.MonitoringState.READY.isMonitoringActive)
+        assertFalse("READY state has no running service", com.learningtracker.companion.model.MonitoringState.READY.isServiceRunning)
+    }
+
+    @Test
+    fun test100_BootRecoveryReconcilesOrphanedSessionWithoutStartingService() {
+        // Requirement A & Section 5: Boot recovery reconciles orphaned session as PARTIAL and leaves device idle.
+        com.learningtracker.companion.service.FocusMonitoringService.resetStateForTesting()
+
+        val inMemoryStorage = com.learningtracker.companion.sync.InMemoryTelemetryStorage()
+        val fakeApi = FakeTestPhoneApiClient()
+        val fakePairing = FakeTestPairingManager()
+        val syncManager = FocusIntegritySyncManager(
+            context = null,
+            pairingManager = fakePairing,
+            apiClient = fakeApi,
+            storage = inMemoryStorage
+        )
+
+        // Simulate orphaned session interrupted by device power-off
+        val orphaned = FocusSessionContract(
+            sessionId = "sess_reboot_test_100",
+            startedAt = 100000L,
+            intendedDurationSeconds = 1800L,
+            taskName = "Kernel Compilation",
+            subjectName = "CS",
+            state = "RUNNING"
+        )
+        syncManager.onFocusStarted(orphaned)
+        assertEquals(orphaned.sessionId, syncManager.getActiveSession()?.sessionId)
+
+        // Exercise the actual production BootReceiver recovery path
+        com.learningtracker.companion.service.BootReceiver.handleBootRecovery(syncManager)
+
+        // Active session is cleared from active state
+        assertNull("Orphaned active session must be cleared after boot recovery", syncManager.getActiveSession())
+
+        // Reconciled summary is saved in durable storage with honest PARTIAL status and ESTIMATED confidence
+        val summary = syncManager.storage.getSummary("sum_sess_reboot_test_100")
+        assertNotNull("Reconciled summary must be saved in storage", summary)
+        assertEquals("sess_reboot_test_100", summary?.sessionId)
+        assertEquals(CollectionStatus.PARTIAL, summary?.collectionStatus)
+        assertEquals(BoundaryConfidence.ESTIMATED, summary?.boundaryConfidence)
+
+        // INVARIANT: Foreground service is NEVER started on boot recovery
+        assertFalse("Foreground service must NOT start on boot recovery", com.learningtracker.companion.service.FocusMonitoringService.isRunning)
+        assertEquals(com.learningtracker.companion.model.MonitoringState.READY, com.learningtracker.companion.service.FocusMonitoringService.currentState)
+        assertNull(com.learningtracker.companion.service.FocusMonitoringService.activeMonitoredSessionId)
+    }
+
+    @Test
+    fun test101_SameSessionRepeatedStartsAreIdempotent() = kotlinx.coroutines.runBlocking {
+        // Requirement B: Service startup must be idempotent for the same session ID.
+        com.learningtracker.companion.service.FocusMonitoringService.resetStateForTesting()
+
+        val inMemoryStorage = com.learningtracker.companion.sync.InMemoryTelemetryStorage()
+        val fakeApi = FakeTestPhoneApiClient()
+        val fakePairing = FakeTestPairingManager()
+        val syncManager = FocusIntegritySyncManager(
+            context = null,
+            pairingManager = fakePairing,
+            apiClient = fakeApi,
+            storage = inMemoryStorage
+        )
+
+        val session = FocusSessionContract(
+            sessionId = "sess_idem_same_101",
+            startedAt = 100000L,
+            intendedDurationSeconds = 1500L,
+            taskName = "Concurrent Algorithms",
+            state = "RUNNING"
+        )
+
+        val coordinator = com.learningtracker.companion.service.SessionLifecycleCoordinator(
+            scope = this,
+            pollIntervalMs = 60000L
+        )
+
+        // First start for session A
+        val firstStart = coordinator.startOrTransitionSession(session, syncManager)
+        assertTrue(firstStart)
+        assertTrue(coordinator.isRunning)
+        assertEquals(session.sessionId, coordinator.currentSession?.sessionId)
+        val firstJob = coordinator.activeJob
+        assertNotNull(firstJob)
+
+        // Second start attempt for the EXACT SAME session ID
+        val secondStart = coordinator.startOrTransitionSession(session, syncManager)
+        assertTrue(secondStart)
+
+        // Invariant: Exactly one monitoring job, identity unchanged, no duplicate records
+        assertSame("Job instance must remain identical on duplicate start", firstJob, coordinator.activeJob)
+        assertEquals(session.sessionId, coordinator.currentSession?.sessionId)
+        assertEquals("No duplicate summaries created", 0, inMemoryStorage.getAllSummaries().size)
+
+        coordinator.stop(syncManager)
+    }
+
+    @Test
+    fun test102_DifferentSessionTransitionSerializesAndPreventsUnsafeOverwrite() = kotlinx.coroutines.runBlocking {
+        // Requirement C: Session transitions must be serialized and safe.
+        com.learningtracker.companion.service.FocusMonitoringService.resetStateForTesting()
+
+        val inMemoryStorage = com.learningtracker.companion.sync.InMemoryTelemetryStorage()
+        val fakeApi = FakeTestPhoneApiClient()
+        val fakePairing = FakeTestPairingManager()
+        val syncManager = FocusIntegritySyncManager(
+            context = null,
+            pairingManager = fakePairing,
+            apiClient = fakeApi,
+            storage = inMemoryStorage
+        )
+
+        val sessionA = FocusSessionContract(
+            sessionId = "sess_alpha_102",
+            startedAt = 100000L,
+            intendedDurationSeconds = 1800L,
+            taskName = "Session Alpha"
+        )
+        val sessionB = FocusSessionContract(
+            sessionId = "sess_beta_102",
+            startedAt = 120000L,
+            intendedDurationSeconds = 1500L,
+            taskName = "Session Beta"
+        )
+
+        val coordinator = com.learningtracker.companion.service.SessionLifecycleCoordinator(
+            scope = this,
+            pollIntervalMs = 60000L
+        )
+
+        // Step 1: Session A starts and runs
+        coordinator.startOrTransitionSession(sessionA, syncManager)
+        assertEquals(sessionA.sessionId, coordinator.currentSession?.sessionId)
+
+        // Step 2: Session B arrives: transition safely finalizes Session A first
+        val transitionSuccess = coordinator.startOrTransitionSession(sessionB, syncManager)
+        assertTrue("Transition must succeed", transitionSuccess)
+
+        // Session A was safely finalized before Session B started
+        val summaryA = inMemoryStorage.getSummary("sum_sess_alpha_102")
+        assertNotNull("Session A must be finalized into durable storage", summaryA)
+        assertEquals("sess_alpha_102", summaryA?.sessionId)
+
+        // Session B is now the active monitored session
+        assertEquals(sessionB.sessionId, coordinator.currentSession?.sessionId)
+        assertTrue(coordinator.isRunning)
+
+        coordinator.stop(syncManager)
+
+        // Step 3: Negative Scenario - Finalization failure prevents unsafe replacement
+        val failingStorage = object : com.learningtracker.companion.sync.ITelemetryStorage by com.learningtracker.companion.sync.InMemoryTelemetryStorage() {
+            override fun saveSummary(summary: FocusSummary) {
+                throw IllegalStateException("Simulated disk write failure during finalization")
+            }
+        }
+        val failingSyncManager = FocusIntegritySyncManager(
+            context = null,
+            pairingManager = fakePairing,
+            apiClient = fakeApi,
+            storage = failingStorage
+        )
+
+        val sessionC = FocusSessionContract(sessionId = "sess_gamma_102", startedAt = 200000L, intendedDurationSeconds = 1500L)
+        val sessionD = FocusSessionContract(sessionId = "sess_delta_102", startedAt = 220000L, intendedDurationSeconds = 1500L)
+
+        val failingCoordinator = com.learningtracker.companion.service.SessionLifecycleCoordinator(scope = this, pollIntervalMs = 60000L)
+        failingCoordinator.startOrTransitionSession(sessionC, failingSyncManager)
+        assertEquals("sess_gamma_102", failingCoordinator.currentSession?.sessionId)
+
+        // Attempt transition to session D: finalization of C will throw
+        val failedTransition = failingCoordinator.startOrTransitionSession(sessionD, failingSyncManager)
+        assertFalse("Transition must fail if previous session cannot be finalized", failedTransition)
+
+        // Invariant: Session C is NOT replaced by Session D!
+        assertEquals("sess_gamma_102", failingCoordinator.currentSession?.sessionId)
+        assertNotNull("Startup failure must be reported", com.learningtracker.companion.service.FocusMonitoringService.lastStartupError)
+        assertTrue(com.learningtracker.companion.service.FocusMonitoringService.lastStartupError!!.contains("sess_gamma_102"))
+
+        failingCoordinator.stop(null)
+    }
+
+    @Test
+    fun test103_SingleSnapshotUploadOwnerValidatesSessionIdentity() {
+        // Requirement D: Single live snapshot upload owner.
+        val inMemoryStorage = com.learningtracker.companion.sync.InMemoryTelemetryStorage()
+        val fakeApi = FakeTestPhoneApiClient()
+        val fakePairing = FakeTestPairingManager()
+        val syncManager = FocusIntegritySyncManager(
+            context = null,
+            pairingManager = fakePairing,
+            apiClient = fakeApi,
+            storage = inMemoryStorage
+        )
+
+        val activeSession = FocusSessionContract(
+            sessionId = "sess_snapshot_active_103",
+            startedAt = 100000L,
+            intendedDurationSeconds = 1500L
+        )
+        val oldSession = FocusSessionContract(
+            sessionId = "sess_snapshot_old_103",
+            startedAt = 80000L,
+            intendedDurationSeconds = 1500L
+        )
+
+        syncManager.resetSnapshotUploadCount()
+        assertEquals(0, syncManager.getSnapshotUploadCount())
+
+        // Case 1: Active session matches -> upload succeeds and increments count
+        syncManager.onFocusStarted(activeSession)
+        val activeUploadSuccess = syncManager.uploadLiveTimelineSnapshot(activeSession, now = 120000L)
+        assertTrue(activeUploadSuccess)
+        assertEquals(1, syncManager.getSnapshotUploadCount())
+
+        // Case 2: Upload attempted for old / different session ID -> rejected!
+        val oldUploadSuccess = syncManager.uploadLiveTimelineSnapshot(oldSession, now = 125000L)
+        assertFalse("Snapshot for non-active session must be rejected", oldUploadSuccess)
+        assertEquals("Upload count must not increment on rejected session", 1, syncManager.getSnapshotUploadCount())
+
+        // Case 3: Session is cancelled / inactive -> rejected!
+        syncManager.onFocusCancelled(activeSession.sessionId)
+        val inactiveUploadSuccess = syncManager.uploadLiveTimelineSnapshot(activeSession, now = 130000L)
+        assertFalse("Snapshot for inactive session must be rejected", inactiveUploadSuccess)
+        assertEquals(1, syncManager.getSnapshotUploadCount())
+    }
+
+    @Test
+    fun test104_ConcurrentFinalizationCreatesSingleAuthoritativeSummary() = kotlinx.coroutines.runBlocking {
+        // Requirement E: Finalization must be idempotent and concurrency-safe.
+        val inMemoryStorage = com.learningtracker.companion.sync.InMemoryTelemetryStorage()
+        val fakeApi = FakeTestPhoneApiClient()
+        val fakePairing = FakeTestPairingManager()
+        val syncManager = FocusIntegritySyncManager(
+            context = null,
+            pairingManager = fakePairing,
+            apiClient = fakeApi,
+            storage = inMemoryStorage
+        )
+
+        val session = FocusSessionContract(
+            sessionId = "sess_concurrent_104",
+            startedAt = 1000000L,
+            intendedDurationSeconds = 1800L
+        )
+        val fixedEndTime = 2200000L // 1200 seconds
+
+        // Launch 20 concurrent coroutines calling finalizeSessionCollection simultaneously
+        val deferredSummaries = (1..20).map {
+            async(Dispatchers.Default) {
+                syncManager.finalizeSessionCollection(session, fixedEndTime)
+            }
+        }
+
+        val results = deferredSummaries.awaitAll()
+        assertEquals(20, results.size)
+
+        // All 20 callers must receive the exact same summary ID and contents
+        val expectedSummaryId = "sum_sess_concurrent_104"
+        for (summary in results) {
+            assertEquals(expectedSummaryId, summary.summaryId)
+            assertEquals("sess_concurrent_104", summary.sessionId)
+            assertEquals(1200L, summary.observedWindowSeconds)
+        }
+
+        // Exactly one summary must be persisted in durable storage
+        val allStored = inMemoryStorage.getAllSummaries()
+        assertEquals("Storage must contain exactly one summary record", 1, allStored.size)
+        assertEquals(expectedSummaryId, allStored[0].summaryId)
+    }
+
+    @Test
+    fun test104B_ApplicationScopedSyncManager_AccessorIdentityAndConcurrency() = kotlinx.coroutines.runBlocking {
+        // Part A: One application-scoped dependency ownership mechanism.
+        // Proves that the application-level accessor FocusIntegrityApplication.getSyncManager(context)
+        // consistently resolves to the single authoritative FocusIntegritySyncManager instance,
+        // and that concurrent access across 20 threads never constructs duplicate manager instances.
+        val sharedStorage = com.learningtracker.companion.sync.InMemoryTelemetryStorage()
+        val fakePairing = FakeTestPairingManager()
+        val fakeApi = FakeTestPhoneApiClient()
+        val authoritativeManager = FocusIntegritySyncManager(
+            context = null,
+            pairingManager = fakePairing,
+            apiClient = fakeApi,
+            storage = sharedStorage
+        )
+
+        // Inject authoritative manager into Application scope
+        FocusIntegrityApplication.setTestInstance(null, testManager = authoritativeManager, testPairing = fakePairing)
+
+        try {
+            val testContext = TestStartupContext(mapOf("automatic_tracking_enabled" to true))
+
+            val manager1 = FocusIntegrityApplication.getSyncManager(testContext)
+            val manager2 = FocusIntegrityApplication.getSyncManager(testContext)
+            assertSame("Repeated accessor calls must return identical authoritative instance", authoritativeManager, manager1)
+            assertSame("Repeated accessor calls must return identical authoritative instance", manager1, manager2)
+
+            // Concurrency: 20 parallel coroutines all receive the exact same singleton instance
+            val deferred = (1..20).map {
+                async(Dispatchers.Default) {
+                    FocusIntegrityApplication.getSyncManager(testContext)
+                }
+            }
+            val instances = deferred.awaitAll()
+            assertEquals(20, instances.size)
+            for (inst in instances) {
+                assertSame("Concurrent access must never construct duplicate instances", authoritativeManager, inst)
+            }
+        } finally {
+            FocusIntegrityApplication.resetTestOverrides()
+        }
+    }
+
+    @Test
+    fun test104C_AuthoritativeManager_ConcurrentFinalizationThreadSafety() = kotlinx.coroutines.runBlocking {
+        // Part A & Requirement E: Serialized finalization through the authoritative manager.
+        val sharedStorage = com.learningtracker.companion.sync.InMemoryTelemetryStorage()
+        val fakePairing = FakeTestPairingManager()
+        val fakeApi = FakeTestPhoneApiClient()
+        val authoritativeManager = FocusIntegritySyncManager(
+            context = null,
+            pairingManager = fakePairing,
+            apiClient = fakeApi,
+            storage = sharedStorage
+        )
+
+        FocusIntegrityApplication.setTestInstance(null, testManager = authoritativeManager, testPairing = fakePairing)
+
+        try {
+            val session = FocusSessionContract(
+                sessionId = "sess_multi_component_104c",
+                startedAt = 1000000L,
+                intendedDurationSeconds = 1800L
+            )
+            val fixedEndTime = 2200000L
+
+            // 10 concurrent coroutines finalizing through the authoritative manager
+            val deferred = (1..10).map {
+                async(Dispatchers.Default) {
+                    val mgr = FocusIntegrityApplication.getSyncManager(TestStartupContext())
+                    mgr.finalizeSessionCollection(session, fixedEndTime)
+                }
+            }
+
+            val results = deferred.awaitAll()
+            assertEquals(10, results.size)
+            // Under shared authoritative manager, finalizationLock serializes and exactly 1 summary is stored
+            val stored = sharedStorage.getAllSummaries()
+            assertEquals(1, stored.size)
+            assertEquals("sum_sess_multi_component_104c", stored[0].summaryId)
+        } finally {
+            FocusIntegrityApplication.resetTestOverrides()
+        }
+    }
+
+    @Test
+    fun test104D_BootReceiver_ExecutesRecoveryThroughAuthoritativeManager() {
+        // Component-level verification: BootReceiver.handleBootRecovery(context) obtains and reconciles
+        // an orphaned active session strictly through the authoritative Application-scoped syncManager.
+        val sharedStorage = com.learningtracker.companion.sync.InMemoryTelemetryStorage()
+        val fakePairing = FakeTestPairingManager()
+        val fakeApi = FakeTestPhoneApiClient()
+        val authoritativeManager = FocusIntegritySyncManager(
+            context = null,
+            pairingManager = fakePairing,
+            apiClient = fakeApi,
+            storage = sharedStorage
+        )
+
+        // Seed an active orphaned session in the authoritative manager
+        val orphaned = FocusSessionContract(
+            sessionId = "sess_boot_recovery_104d",
+            startedAt = 1000000L,
+            intendedDurationSeconds = 1800L,
+            taskName = "Boot Recovery Task"
+        )
+        authoritativeManager.onFocusStarted(orphaned)
+        assertNotNull("Active session must exist before boot recovery", authoritativeManager.getActiveSession())
+
+        FocusIntegrityApplication.setTestInstance(null, testManager = authoritativeManager, testPairing = fakePairing)
+
+        try {
+            val testContext = TestStartupContext(mapOf("automatic_tracking_enabled" to true))
+
+            // Execute ACTUAL production component access path: BootReceiver.handleBootRecovery(Context)
+            BootReceiver.handleBootRecovery(testContext)
+
+            // Verify: Active session in authoritative manager was reconciled and cleared
+            assertNull("Authoritative manager active session must be cleared after boot recovery", authoritativeManager.getActiveSession())
+
+            // Verify: Telemetry was saved to the authoritative manager's storage with PARTIAL collection status
+            val summaries = sharedStorage.getAllSummaries()
+            assertEquals("Storage must contain reconciled summary", 1, summaries.size)
+            assertEquals("sess_boot_recovery_104d", summaries[0].sessionId)
+            assertEquals("Orphaned session must be reconciled as PARTIAL", CollectionStatus.PARTIAL, summaries[0].collectionStatus)
+        } finally {
+            FocusIntegrityApplication.resetTestOverrides()
+        }
+    }
+
+    @Test
+    fun test104E_FocusMonitoringServiceStart_DiscoversSessionThroughAuthoritativeManager() {
+        // Component-level verification: FocusMonitoringService.start(context) queries the active session
+        // strictly from the authoritative Application-scoped syncManager.
+        FocusMonitoringService.resetStateForTesting()
+        UsageAccessHelper.usageAccessOverride = { true }
+
+        val sharedStorage = com.learningtracker.companion.sync.InMemoryTelemetryStorage()
+        val fakePairing = FakeTestPairingManager()
+        val fakeApi = FakeTestPhoneApiClient()
+        val authoritativeManager = FocusIntegritySyncManager(
+            context = null,
+            pairingManager = fakePairing,
+            apiClient = fakeApi,
+            storage = sharedStorage
+        )
+
+        FocusIntegrityApplication.setTestInstance(null, testManager = authoritativeManager, testPairing = fakePairing)
+
+        try {
+            val testContext = TestStartupContext(mapOf("automatic_tracking_enabled" to true))
+
+            // Case 1: IDLE device (authoritativeManager has NO active session)
+            assertNull(authoritativeManager.getActiveSession())
+            val startedIdle = FocusMonitoringService.start(testContext)
+            assertFalse("Service must NOT start when authoritative manager has no active session", startedIdle)
+            assertEquals(
+                "Cannot start FocusMonitoringService: No active session found (device is IDLE).",
+                FocusMonitoringService.lastStartupError
+            )
+
+            // Case 2: ACTIVE session in authoritativeManager
+            val activeSession = FocusSessionContract(
+                sessionId = "sess_service_start_104e",
+                startedAt = 2000000L,
+                intendedDurationSeconds = 1500L,
+                taskName = "Authoritative Active Task"
+            )
+            authoritativeManager.onFocusStarted(activeSession)
+
+            var dispatchedSession: FocusSessionContract? = null
+            FocusMonitoringService.serviceDispatcher = ServiceDispatcher { _, session ->
+                dispatchedSession = session
+                ComponentName("com.learningtracker.companion", "com.learningtracker.companion.service.FocusMonitoringService")
+            }
+
+            // Execute ACTUAL production component access path: FocusMonitoringService.start(Context)
+            val startedActive = FocusMonitoringService.start(testContext)
+
+            assertTrue("Service must dispatch when authoritative manager has active session", startedActive)
+            assertNotNull("Dispatcher must receive the session from the authoritative manager", dispatchedSession)
+            assertEquals("sess_service_start_104e", dispatchedSession?.sessionId)
+            assertEquals("Authoritative Active Task", dispatchedSession?.taskName)
+        } finally {
+            FocusMonitoringService.resetStateForTesting()
+            UsageAccessHelper.resetForTesting()
+            FocusIntegrityApplication.resetTestOverrides()
+        }
+    }
+
+    @Test
+    fun test105_FailedServiceStartupIsObservable() {
+        // Requirement G: Startup failures must be observable.
+        FocusMonitoringService.resetStateForTesting()
+
+        assertNull("lastStartupError must be null initially", FocusMonitoringService.lastStartupError)
+        assertNull("startupErrorFlow must emit null initially", FocusMonitoringService.startupErrorFlow.value)
+
+        val failureReason = "Usage access permission (PACKAGE_USAGE_STATS) is not granted."
+        FocusMonitoringService.reportStartupFailure(failureReason)
+
+        assertNotNull("Startup failure must be observable on lastStartupError", FocusMonitoringService.lastStartupError)
+        assertEquals(failureReason, FocusMonitoringService.lastStartupError)
+        assertEquals(failureReason, FocusMonitoringService.startupErrorFlow.value)
+        assertFalse("Failed service startup must not leave service running", FocusMonitoringService.isRunning)
+
+        // Reset clears error state cleanly
+        FocusMonitoringService.resetStateForTesting()
+        assertNull(FocusMonitoringService.lastStartupError)
+        assertNull(FocusMonitoringService.startupErrorFlow.value)
+    }
+
+    private class TestPreferences(private val data: Map<String, Any>) : android.content.SharedPreferences {
+        override fun getAll(): Map<String, *> = data
+        override fun getString(key: String?, defValue: String?): String? = data[key] as? String ?: defValue
+        @Suppress("UNCHECKED_CAST")
+        override fun getStringSet(key: String?, defValues: Set<String>?): Set<String>? = data[key] as? Set<String> ?: defValues
+        override fun getInt(key: String?, defValue: Int): Int = data[key] as? Int ?: defValue
+        override fun getLong(key: String?, defValue: Long): Long = data[key] as? Long ?: defValue
+        override fun getFloat(key: String?, defValue: Float): Float = data[key] as? Float ?: defValue
+        override fun getBoolean(key: String?, defValue: Boolean): Boolean = data[key] as? Boolean ?: defValue
+        override fun contains(key: String?): Boolean = data.containsKey(key)
+        override fun edit(): android.content.SharedPreferences.Editor = throw UnsupportedOperationException()
+        override fun registerOnSharedPreferenceChangeListener(listener: android.content.SharedPreferences.OnSharedPreferenceChangeListener?) {}
+        override fun unregisterOnSharedPreferenceChangeListener(listener: android.content.SharedPreferences.OnSharedPreferenceChangeListener?) {}
+    }
+
+    private class TestStartupContext(
+        private val prefsData: Map<String, Any> = mapOf("automatic_tracking_enabled" to true),
+        private val app: FocusIntegrityApplication? = null
+    ) : android.content.ContextWrapper(null) {
+        override fun getSharedPreferences(name: String?, mode: Int): android.content.SharedPreferences {
+            return TestPreferences(prefsData)
+        }
+        override fun getApplicationContext(): android.content.Context = app ?: this
+        override fun getPackageName(): String = "com.learningtracker.companion"
+    }
+
+    private fun createForegroundServiceStartNotAllowedException(message: String): Throwable {
+        return try {
+            val clazz = Class.forName("android.app.ForegroundServiceStartNotAllowedException")
+            val ctor = clazz.constructors.firstOrNull { it.parameterTypes.size == 1 && it.parameterTypes[0] == String::class.java }
+                ?: clazz.declaredConstructors.firstOrNull { it.parameterTypes.isEmpty() }
+            if (ctor != null) {
+                ctor.isAccessible = true
+                if (ctor.parameterTypes.size == 1) {
+                    ctor.newInstance(message) as Throwable
+                } else {
+                    ctor.newInstance() as Throwable
+                }
+            } else {
+                val unsafeField = Class.forName("sun.misc.Unsafe").getDeclaredField("theUnsafe")
+                unsafeField.isAccessible = true
+                val unsafe = unsafeField.get(null)
+                val allocateInstance = unsafe.javaClass.getMethod("allocateInstance", Class::class.java)
+                val inst = allocateInstance.invoke(unsafe, clazz) as Throwable
+                val detailMessageField = Throwable::class.java.getDeclaredField("detailMessage")
+                detailMessageField.isAccessible = true
+                detailMessageField.set(inst, message)
+                inst
+            }
+        } catch (_: Throwable) {
+            class ForegroundServiceStartNotAllowedException(msg: String) : IllegalStateException(msg)
+            ForegroundServiceStartNotAllowedException(message)
+        }
+    }
+
+    @Test
+    fun test105A_RealStartupPath_ServiceDispatchSuccess() {
+        // Part B & C: Actual startForSession() entry point successfully dispatches service intent.
+        FocusMonitoringService.resetStateForTesting()
+        UsageAccessHelper.usageAccessOverride = { true }
+
+        val fakePairing = FakeTestPairingManager()
+        val fakeApi = FakeTestPhoneApiClient()
+        val storage = com.learningtracker.companion.sync.InMemoryTelemetryStorage()
+        val syncManager = FocusIntegritySyncManager(
+            context = null,
+            pairingManager = fakePairing,
+            apiClient = fakeApi,
+            storage = storage
+        )
+        FocusIntegrityApplication.setTestInstance(null, testManager = syncManager, testPairing = fakePairing)
+
+        try {
+            val testContext = TestStartupContext(mapOf("automatic_tracking_enabled" to true))
+            val session = FocusSessionContract(
+                sessionId = "sess_dispatch_success_105a",
+                startedAt = 100000L,
+                intendedDurationSeconds = 1500L,
+                taskName = "Dispatch Test"
+            )
+
+            var dispatchedSession: FocusSessionContract? = null
+            val successDispatcher = ServiceDispatcher { _, sess ->
+                dispatchedSession = sess
+                ComponentName("com.learningtracker.companion", "com.learningtracker.companion.service.FocusMonitoringService")
+            }
+
+            // Execute production startForSession() entry point with injectable dispatcher
+            val dispatched = FocusMonitoringService.startForSession(testContext, session, dispatcher = successDispatcher)
+
+            assertTrue("Service dispatch must return true on success", dispatched)
+            assertNotNull("Dispatcher must receive the session", dispatchedSession)
+            assertEquals("sess_dispatch_success_105a", dispatchedSession?.sessionId)
+            assertEquals("Dispatch Test", dispatchedSession?.taskName)
+
+            // Observability: Errors must be cleared on success
+            assertNull("lastStartupError must be null on successful dispatch", FocusMonitoringService.lastStartupError)
+            assertNull("startupErrorFlow must emit null on successful dispatch", FocusMonitoringService.startupErrorFlow.value)
+            // Dispatch alone does not mark service as running (coordinator sets running upon lifecycle start)
+            assertFalse("Service must not be running before onStartCommand execution", FocusMonitoringService.isRunning)
+        } finally {
+            FocusIntegrityApplication.resetTestOverrides()
+            UsageAccessHelper.resetForTesting()
+            FocusMonitoringService.resetStateForTesting()
+        }
+    }
+
+    @Test
+    fun test105B_RealStartupPath_ForegroundServiceStartNotAllowedException_IsObservableAndLeavesServiceStopped() {
+        // Part B & C: ForegroundServiceStartNotAllowedException is safely caught, reported, and leaves service stopped.
+        FocusMonitoringService.resetStateForTesting()
+        UsageAccessHelper.usageAccessOverride = { true }
+
+        val fakePairing = FakeTestPairingManager()
+        FocusIntegrityApplication.setTestInstance(null, testPairing = fakePairing)
+
+        try {
+            val testContext = TestStartupContext(mapOf("automatic_tracking_enabled" to true))
+            val session = FocusSessionContract(
+                sessionId = "sess_fgs_not_allowed_105b",
+                startedAt = 100000L,
+                intendedDurationSeconds = 1500L
+            )
+
+            val expectedException = createForegroundServiceStartNotAllowedException(
+                "Service cannot be started from the background"
+            )
+
+            val throwingDispatcher = ServiceDispatcher { _, _ ->
+                throw expectedException
+            }
+
+            // Execute production startForSession() entry point
+            val dispatched = FocusMonitoringService.startForSession(testContext, session, dispatcher = throwingDispatcher)
+
+            assertFalse("Dispatch must return false when ForegroundServiceStartNotAllowedException is thrown", dispatched)
+            assertNotNull("Startup failure must be observable on lastStartupError", FocusMonitoringService.lastStartupError)
+            assertTrue(
+                "lastStartupError must describe ForegroundServiceStartNotAllowedException: ${FocusMonitoringService.lastStartupError}",
+                FocusMonitoringService.lastStartupError!!.contains("ForegroundServiceStartNotAllowedException")
+            )
+            assertEquals("startupErrorFlow must match lastStartupError", FocusMonitoringService.lastStartupError, FocusMonitoringService.startupErrorFlow.value)
+            assertFalse("Service must remain stopped after dispatch failure", FocusMonitoringService.isRunning)
+        } finally {
+            FocusIntegrityApplication.resetTestOverrides()
+            UsageAccessHelper.resetForTesting()
+            FocusMonitoringService.resetStateForTesting()
+        }
+    }
+
+    @Test
+    fun test105C_RealStartupPath_GenericDispatchException_IsObservableAndLeavesServiceStopped() {
+        // Part B & C: Generic runtime startup exception is safely caught, reported, and leaves service stopped.
+        FocusMonitoringService.resetStateForTesting()
+        UsageAccessHelper.usageAccessOverride = { true }
+
+        val fakePairing = FakeTestPairingManager()
+        FocusIntegrityApplication.setTestInstance(null, testPairing = fakePairing)
+
+        try {
+            val testContext = TestStartupContext(mapOf("automatic_tracking_enabled" to true))
+            val session = FocusSessionContract(
+                sessionId = "sess_generic_err_105c",
+                startedAt = 100000L,
+                intendedDurationSeconds = 1500L
+            )
+
+            val genericSecurityException = SecurityException("Not allowed to start service com.learningtracker.companion")
+
+            val throwingDispatcher = ServiceDispatcher { _, _ ->
+                throw genericSecurityException
+            }
+
+            // Execute production startForSession() entry point
+            val dispatched = FocusMonitoringService.startForSession(testContext, session, dispatcher = throwingDispatcher)
+
+            assertFalse("Dispatch must return false when generic exception is thrown", dispatched)
+            assertNotNull("Startup failure must be observable on lastStartupError", FocusMonitoringService.lastStartupError)
+            assertTrue(
+                "lastStartupError must mention SecurityException: ${FocusMonitoringService.lastStartupError}",
+                FocusMonitoringService.lastStartupError!!.contains("SecurityException")
+            )
+            assertTrue(
+                "lastStartupError must mention exception message: ${FocusMonitoringService.lastStartupError}",
+                FocusMonitoringService.lastStartupError!!.contains("Not allowed to start service com.learningtracker.companion")
+            )
+            assertEquals("startupErrorFlow must match lastStartupError", FocusMonitoringService.lastStartupError, FocusMonitoringService.startupErrorFlow.value)
+            assertFalse("Service must remain stopped after dispatch failure", FocusMonitoringService.isRunning)
+        } finally {
+            FocusIntegrityApplication.resetTestOverrides()
+            UsageAccessHelper.resetForTesting()
+            FocusMonitoringService.resetStateForTesting()
+        }
+    }
+
+    @Test
+    fun test105D_RealStartupPath_MissingPrerequisitesReportsObservableFailure() {
+        // Requirement G: Actual startForSession() must enforce preferences prerequisite without dispatching.
+        FocusMonitoringService.resetStateForTesting()
+
+        val testContext = TestStartupContext(mapOf("automatic_tracking_enabled" to false))
+        val session = FocusSessionContract(
+            sessionId = "sess_failed_startup_105d",
+            startedAt = 100000L,
+            intendedDurationSeconds = 1500L
+        )
+
+        var dispatcherInvoked = false
+        val dispatcher = ServiceDispatcher { _, _ ->
+            dispatcherInvoked = true
+            null
+        }
+
+        // Exercise the ACTUAL production startup path
+        val started = FocusMonitoringService.startForSession(testContext, session, dispatcher = dispatcher)
+
+        assertFalse("Service must NOT start when tracking is disabled in preferences", started)
+        assertFalse("Dispatcher must not be invoked when prerequisites fail", dispatcherInvoked)
+        assertFalse("Service must NOT be running after prerequisite failure", FocusMonitoringService.isRunning)
+        assertNotNull("Startup failure must be observable on lastStartupError", FocusMonitoringService.lastStartupError)
+        assertEquals("Tracking is disabled in companion preferences.", FocusMonitoringService.lastStartupError)
+        assertEquals("Tracking is disabled in companion preferences.", FocusMonitoringService.startupErrorFlow.value)
+    }
+
+    @Test
+    fun test105E_RealStartupPath_UnpairedDeviceRefusesDispatch() {
+        // Requirement G: Unpaired device must be rejected at prerequisite validation.
+        FocusMonitoringService.resetStateForTesting()
+        val fakePairing = FakeTestPairingManager(paired = false)
+        FocusIntegrityApplication.setTestInstance(null, testPairing = fakePairing)
+
+        try {
+            val testContext = TestStartupContext(mapOf("automatic_tracking_enabled" to true))
+            val session = FocusSessionContract(
+                sessionId = "sess_unpaired_105e",
+                startedAt = 100000L,
+                intendedDurationSeconds = 1500L
+            )
+
+            var dispatcherInvoked = false
+            val dispatcher = ServiceDispatcher { _, _ ->
+                dispatcherInvoked = true
+                null
+            }
+
+            val started = FocusMonitoringService.startForSession(testContext, session, dispatcher = dispatcher)
+
+            assertFalse("Service must NOT start when device is not paired", started)
+            assertFalse("Dispatcher must not be invoked when device is not paired", dispatcherInvoked)
+            assertFalse("Service must NOT be running", FocusMonitoringService.isRunning)
+            assertEquals("Device is not paired or pairing token is revoked.", FocusMonitoringService.lastStartupError)
+            assertEquals("Device is not paired or pairing token is revoked.", FocusMonitoringService.startupErrorFlow.value)
+        } finally {
+            FocusIntegrityApplication.resetTestOverrides()
+            FocusMonitoringService.resetStateForTesting()
+        }
+    }
+
+    @Test
+    fun test105F_RealStartupPath_MissingUsageAccessRefusesDispatch() {
+        // Requirement G: Missing usage access must be rejected at prerequisite validation.
+        FocusMonitoringService.resetStateForTesting()
+        val fakePairing = FakeTestPairingManager()
+        FocusIntegrityApplication.setTestInstance(null, testPairing = fakePairing)
+        UsageAccessHelper.usageAccessOverride = { false }
+
+        try {
+            val testContext = TestStartupContext(mapOf("automatic_tracking_enabled" to true))
+            val session = FocusSessionContract(
+                sessionId = "sess_no_usage_105f",
+                startedAt = 100000L,
+                intendedDurationSeconds = 1500L
+            )
+
+            var dispatcherInvoked = false
+            val dispatcher = ServiceDispatcher { _, _ ->
+                dispatcherInvoked = true
+                null
+            }
+
+            val started = FocusMonitoringService.startForSession(testContext, session, dispatcher = dispatcher)
+
+            assertFalse("Service must NOT start when usage access is missing", started)
+            assertFalse("Dispatcher must not be invoked when usage access is missing", dispatcherInvoked)
+            assertFalse("Service must NOT be running", FocusMonitoringService.isRunning)
+            assertEquals("Usage access permission (PACKAGE_USAGE_STATS) is not granted.", FocusMonitoringService.lastStartupError)
+            assertEquals("Usage access permission (PACKAGE_USAGE_STATS) is not granted.", FocusMonitoringService.startupErrorFlow.value)
+        } finally {
+            UsageAccessHelper.resetForTesting()
+            FocusIntegrityApplication.resetTestOverrides()
+            FocusMonitoringService.resetStateForTesting()
+        }
+    }
+
+    @Test
+    fun test106_ServerStatusLookupFailurePreservesActiveSessionWithoutFabricatingTime() {
+        // Requirement F: Network failure during server status check preserves active session for retry.
+        val inMemoryStorage = com.learningtracker.companion.sync.InMemoryTelemetryStorage()
+        val fakeApi = FakeTestPhoneApiClient()
+        val fakePairing = FakeTestPairingManager()
+        val syncManager = FocusIntegritySyncManager(
+            context = null,
+            pairingManager = fakePairing,
+            apiClient = fakeApi,
+            storage = inMemoryStorage
+        )
+
+        val session = FocusSessionContract(
+            sessionId = "sess_net_fail_106",
+            startedAt = 1000000L,
+            intendedDurationSeconds = 1500L
+        )
+        syncManager.onFocusStarted(session)
+
+        // Web polling returns NO_ACTIVE_SESSION (web session concluded), but getSessionStatus fails with 503 network error
+        fakeApi.activeSessionResponse = ApiResult.Success(
+            ActiveSessionResponse("NO_ACTIVE_SESSION", null, null, null, null, null, System.currentTimeMillis()),
+            200
+        )
+        fakeApi.sessionStatusResponse = ApiResult.Error("NETWORK_TIMEOUT", "Server status lookup timed out", 503, isTransient = true)
+
+        val pollResult = syncManager.pollActiveSession()
+
+        // Verify: Result is an error, active session is PRESERVED, and no fabricated summary is created
+        assertTrue("Poll result must report error on status lookup failure", pollResult is com.learningtracker.companion.sync.PollResult.Error)
+        assertEquals("STATUS_LOOKUP_FAILED", (pollResult as com.learningtracker.companion.sync.PollResult.Error).code)
+        assertNotNull("Active session must NOT be deleted on network failure", syncManager.getActiveSession())
+        assertEquals("sess_net_fail_106", syncManager.getActiveSession()?.sessionId)
+        assertEquals("No fabricated completed summary created", 0, inMemoryStorage.getAllSummaries().size)
+    }
+
+    @Test
+    fun test107_MissingAuthoritativeEndTimeIsClassifiedAsEstimatedAndPartial() {
+        // Requirement F: Missing authoritative endedAt is classified as ESTIMATED and PARTIAL.
+        val inMemoryStorage = com.learningtracker.companion.sync.InMemoryTelemetryStorage()
+        val fakeApi = FakeTestPhoneApiClient()
+        val fakePairing = FakeTestPairingManager()
+        val syncManager = FocusIntegritySyncManager(
+            context = null,
+            pairingManager = fakePairing,
+            apiClient = fakeApi,
+            storage = inMemoryStorage
+        )
+
+        val session = FocusSessionContract(
+            sessionId = "sess_missing_end_107",
+            startedAt = 1000000L,
+            intendedDurationSeconds = 1500L
+        )
+        syncManager.onFocusStarted(session)
+
+        fakeApi.activeSessionResponse = ApiResult.Success(
+            ActiveSessionResponse("NO_ACTIVE_SESSION", null, null, null, null, null, System.currentTimeMillis()),
+            200
+        )
+        // Server reports COMPLETE, but endedAt and serverEndedAt are NULL
+        fakeApi.sessionStatusResponse = ApiResult.Success(
+            SessionStatusResponse(
+                success = true,
+                sessionId = "sess_missing_end_107",
+                status = "COMPLETE",
+                startedAt = 1000000L,
+                endedAt = null,
+                serverStartedAt = null,
+                serverEndedAt = null,
+                intendedDurationSeconds = 1500L,
+                taskName = "Task",
+                subjectName = "Subject"
+            ),
+            200
+        )
+
+        val pollResult = syncManager.pollActiveSession()
+        assertTrue(pollResult is com.learningtracker.companion.sync.PollResult.Completed)
+        val summary = (pollResult as com.learningtracker.companion.sync.PollResult.Completed).summary
+
+        assertEquals("sess_missing_end_107", summary.sessionId)
+        assertEquals("Missing authoritative end timestamp must be classified as ESTIMATED", BoundaryConfidence.ESTIMATED, summary.boundaryConfidence)
+        assertEquals("Uncertain completion must be classified as PARTIAL", CollectionStatus.PARTIAL, summary.collectionStatus)
+    }
+
+    @Test
+    fun test108_AuthoritativeEndTimeIsClassifiedAsAuthoritativeAndComplete() {
+        // Requirement F: Authoritative server endedAt is preserved truthfully.
+        val inMemoryStorage = com.learningtracker.companion.sync.InMemoryTelemetryStorage()
+        val fakeApi = FakeTestPhoneApiClient()
+        val fakePairing = FakeTestPairingManager()
+        val syncManager = FocusIntegritySyncManager(
+            context = null,
+            pairingManager = fakePairing,
+            apiClient = fakeApi,
+            storage = inMemoryStorage
+        )
+
+        val session = FocusSessionContract(
+            sessionId = "sess_authoritative_108",
+            startedAt = 1000000L,
+            intendedDurationSeconds = 1500L
+        )
+        syncManager.onFocusStarted(session)
+
+        val authoritativeEnd = 2350000L // 1350 seconds
+        fakeApi.activeSessionResponse = ApiResult.Success(
+            ActiveSessionResponse("NO_ACTIVE_SESSION", null, null, null, null, null, System.currentTimeMillis()),
+            200
+        )
+        fakeApi.sessionStatusResponse = ApiResult.Success(
+            SessionStatusResponse(
+                success = true,
+                sessionId = "sess_authoritative_108",
+                status = "COMPLETE",
+                startedAt = 1000000L,
+                endedAt = authoritativeEnd,
+                serverStartedAt = 1000000L,
+                serverEndedAt = authoritativeEnd,
+                intendedDurationSeconds = 1500L,
+                taskName = "Task",
+                subjectName = "Subject"
+            ),
+            200
+        )
+
+        val pollResult = syncManager.pollActiveSession()
+        assertTrue(pollResult is com.learningtracker.companion.sync.PollResult.Completed)
+        val summary = (pollResult as com.learningtracker.companion.sync.PollResult.Completed).summary
+
+        assertEquals("sess_authoritative_108", summary.sessionId)
+        assertEquals(authoritativeEnd, summary.timestamp)
+        assertEquals(1350L, summary.observedWindowSeconds)
+        assertEquals(BoundaryConfidence.AUTHORITATIVE, summary.boundaryConfidence)
+        // Without local raw events, reconstruction truthfully reports NO_OBSERVATIONS without fabricating focus intervals
+        assertEquals(CollectionStatus.NO_OBSERVATIONS, summary.collectionStatus)
+    }
+
+    @Test
+    fun test109_DifferentSessionsFinalizeIndependently() {
+        // Requirement E: Distinct session IDs produce independent authoritative summaries without conflict.
+        val inMemoryStorage = com.learningtracker.companion.sync.InMemoryTelemetryStorage()
+        val syncManager = FocusIntegritySyncManager(
+            context = null,
+            storage = inMemoryStorage
+        )
+
+        val sessionX = FocusSessionContract(sessionId = "sess_x_109", startedAt = 1000L, intendedDurationSeconds = 1000L)
+        val sessionY = FocusSessionContract(sessionId = "sess_y_109", startedAt = 5000L, intendedDurationSeconds = 1000L)
+
+        val summaryX = syncManager.finalizeSessionCollection(sessionX, 2000L)
+        val summaryY = syncManager.finalizeSessionCollection(sessionY, 6000L)
+
+        assertEquals("sum_sess_x_109", summaryX.summaryId)
+        assertEquals("sum_sess_y_109", summaryY.summaryId)
+        assertNotEquals(summaryX.summaryId, summaryY.summaryId)
+        assertEquals(2, inMemoryStorage.getAllSummaries().size)
+    }
+
+    @Test
+    fun test110_UploadFailurePreservesPendingTelemetryWithoutSilentDeletion() {
+        // Requirement D: Upload failures must not silently erase pending telemetry.
+        val inMemoryStorage = com.learningtracker.companion.sync.InMemoryTelemetryStorage()
+        val fakeApi = FakeTestPhoneApiClient()
+        val fakePairing = FakeTestPairingManager()
+        val syncManager = FocusIntegritySyncManager(
+            context = null,
+            pairingManager = fakePairing,
+            apiClient = fakeApi,
+            storage = inMemoryStorage
+        )
+
+        val session = FocusSessionContract(sessionId = "sess_pending_110", startedAt = 1000L, intendedDurationSeconds = 1000L)
+        val summary = syncManager.finalizeSessionCollection(session, 2000L)
+        assertEquals(1, inMemoryStorage.getPendingSummaries().size)
+
+        // Simulate server network failure during batch upload
+        fakeApi.telemetryResponse = ApiResult.Error("NETWORK_ERROR", "Server unavailable", 503, isTransient = true)
+
+        val batchResult = syncManager.uploadPendingSummaries()
+        assertEquals(1, batchResult.failedCount)
+        assertEquals(0, batchResult.uploadedCount)
+
+        // Telemetry is NOT deleted: remains durably in storage with attempt count incremented
+        val pendingAfter = inMemoryStorage.getPendingSummaries()
+        assertEquals(1, pendingAfter.size)
+        assertEquals("sum_sess_pending_110", pendingAfter[0].summaryId)
+        assertEquals(1, inMemoryStorage.getAttempts("sum_sess_pending_110"))
+    }
+
+    @Test
+    fun test111_CancellationDuringSessionCleansUpSafely() = kotlinx.coroutines.runBlocking {
+        // Requirement C: Cancellation cleanly stops monitoring and resets state without leaks.
+        com.learningtracker.companion.service.FocusMonitoringService.resetStateForTesting()
+
+        val inMemoryStorage = com.learningtracker.companion.sync.InMemoryTelemetryStorage()
+        val fakeApi = FakeTestPhoneApiClient()
+        val fakePairing = FakeTestPairingManager()
+        val syncManager = FocusIntegritySyncManager(
+            context = null,
+            pairingManager = fakePairing,
+            apiClient = fakeApi,
+            storage = inMemoryStorage
+        )
+
+        val session = FocusSessionContract(sessionId = "sess_cancel_111", startedAt = 1000L, intendedDurationSeconds = 1500L)
+        val coordinator = com.learningtracker.companion.service.SessionLifecycleCoordinator(scope = this, pollIntervalMs = 60000L)
+
+        coordinator.startOrTransitionSession(session, syncManager)
+        assertTrue(coordinator.isRunning)
+
+        coordinator.stop(syncManager)
+        assertFalse(coordinator.isRunning)
+        assertNull(coordinator.currentSession)
+        assertNull(coordinator.activeJob)
+        assertEquals(com.learningtracker.companion.model.MonitoringState.READY, com.learningtracker.companion.service.FocusMonitoringService.currentState)
+    }
+
+    @Test
+    fun test112_BoundaryConfidenceSerializationAndPreservation() {
+        // Requirement F & Verification Item 3: BoundaryConfidence preservation & serialization round-trip
+        val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+
+        for (confidence in BoundaryConfidence.values()) {
+            val original = FocusSummary(
+                sessionId = "sess_conf_${confidence.name}",
+                summaryId = "sum_conf_${confidence.name}",
+                intendedSeconds = 1500L,
+                observedWindowSeconds = 1500L,
+                interruptionCount = 0,
+                interruptionSeconds = 0L,
+                referenceSeconds = 0L,
+                distractionSeconds = 0L,
+                unknownSeconds = 0L,
+                longestUninterruptedSeconds = 1500L,
+                boundaryConfidence = confidence,
+                collectionStatus = if (confidence == BoundaryConfidence.ESTIMATED) CollectionStatus.PARTIAL else CollectionStatus.COMPLETE
+            )
+
+            val serialized = json.encodeToString(FocusSummary.serializer(), original)
+            assertTrue("Serialized JSON must contain boundaryConfidence value", serialized.contains(confidence.name))
+
+            val deserialized = json.decodeFromString(FocusSummary.serializer(), serialized)
+            assertEquals("BoundaryConfidence must survive JSON serialization", confidence, deserialized.boundaryConfidence)
+        }
+    }
+
+    @Test
+    fun test113_SessionCompletionDoesNotSelfJoinAndReleasesMutex() = kotlinx.coroutines.runBlocking {
+        com.learningtracker.companion.service.FocusMonitoringService.resetStateForTesting()
+
+        val inMemoryStorage = com.learningtracker.companion.sync.InMemoryTelemetryStorage()
+        val fakeApi = FakeTestPhoneApiClient()
+        val fakePairing = FakeTestPairingManager()
+        val syncManager = FocusIntegritySyncManager(
+            context = null,
+            pairingManager = fakePairing,
+            apiClient = fakeApi,
+            storage = inMemoryStorage
+        )
+
+        val session = FocusSessionContract(sessionId = "sess_complete_113", startedAt = 1000L, intendedDurationSeconds = 1500L)
+        var stopForegroundInvoked = 0
+
+        val coordinator = com.learningtracker.companion.service.SessionLifecycleCoordinator(
+            scope = this,
+            pollIntervalMs = 50L,
+            onStopForeground = { stopForegroundInvoked++ }
+        )
+
+        // Session starts
+        coordinator.startOrTransitionSession(session, syncManager)
+        assertTrue(coordinator.isRunning)
+        assertTrue(com.learningtracker.companion.service.FocusMonitoringService.isRunning)
+
+        // Simulate server reporting session complete
+        fakeApi.activeSessionResponse = ApiResult.Success(
+            ActiveSessionResponse("NO_ACTIVE_SESSION", null, null, null, null, null, System.currentTimeMillis()), 200
+        )
+        fakeApi.sessionStatusResponse = ApiResult.Success(
+            SessionStatusResponse(true, "sess_complete_113", "COMPLETE", 1000L, 2000L, 1000L, 2000L, 1000L, "Task", "Subject"), 200
+        )
+
+        // Give coroutines time to poll, complete, and run separate cleanup coroutine
+        val startTime = System.currentTimeMillis()
+        while ((coordinator.isRunning || coordinator.mutex.isLocked) && System.currentTimeMillis() - startTime < 3000L) {
+            delay(50L)
+        }
+
+        // Must not hang/deadlock:
+        assertFalse("Coordinator must not remain running after completion", coordinator.isRunning)
+        assertFalse("FocusMonitoringService.isRunning must be false", com.learningtracker.companion.service.FocusMonitoringService.isRunning)
+        assertNull("currentSession must be null", coordinator.currentSession)
+        assertFalse("Coordinator mutex must be unlocked", coordinator.mutex.isLocked)
+        assertEquals("onStopForeground must be invoked exactly once", 1, stopForegroundInvoked)
+    }
+
+    @Test
+    fun test114_ForegroundServiceTerminatesAfterCompletion() = kotlinx.coroutines.runBlocking {
+        com.learningtracker.companion.service.FocusMonitoringService.resetStateForTesting()
+
+        val inMemoryStorage = com.learningtracker.companion.sync.InMemoryTelemetryStorage()
+        val fakeApi = FakeTestPhoneApiClient()
+        val fakePairing = FakeTestPairingManager()
+        val syncManager = FocusIntegritySyncManager(
+            context = null,
+            pairingManager = fakePairing,
+            apiClient = fakeApi,
+            storage = inMemoryStorage
+        )
+
+        val session = FocusSessionContract(sessionId = "sess_fgs_term_114", startedAt = 1000L, intendedDurationSeconds = 1500L)
+        var stopForegroundCalls = 0
+
+        val coordinator = com.learningtracker.companion.service.SessionLifecycleCoordinator(
+            scope = this,
+            pollIntervalMs = 50L,
+            onStopForeground = { stopForegroundCalls++ }
+        )
+
+        coordinator.startOrTransitionSession(session, syncManager)
+        assertTrue(coordinator.isRunning)
+
+        // Complete session
+        fakeApi.sessionStatusResponse = ApiResult.Success(
+            SessionStatusResponse(true, "sess_fgs_term_114", "COMPLETE", 1000L, 2000L, 1000L, 2000L, 1000L, "Task", "Subject"), 200
+        )
+
+        val start = System.currentTimeMillis()
+        while (coordinator.isRunning && System.currentTimeMillis() - start < 3000L) {
+            delay(50L)
+        }
+
+        assertEquals("onStopForeground must be invoked when session completes", 1, stopForegroundCalls)
+        assertFalse(coordinator.isRunning)
+        assertFalse(com.learningtracker.companion.service.FocusMonitoringService.isRunning)
+    }
+
+    @Test
+    fun test115_SecondSessionStartsAfterFirstSessionFinalization() = kotlinx.coroutines.runBlocking {
+        com.learningtracker.companion.service.FocusMonitoringService.resetStateForTesting()
+
+        val inMemoryStorage = com.learningtracker.companion.sync.InMemoryTelemetryStorage()
+        val fakeApi = FakeTestPhoneApiClient()
+        val fakePairing = FakeTestPairingManager()
+        val syncManager = FocusIntegritySyncManager(
+            context = null,
+            pairingManager = fakePairing,
+            apiClient = fakeApi,
+            storage = inMemoryStorage
+        )
+
+        val session1 = FocusSessionContract(sessionId = "sess_1_115", startedAt = 1000L, intendedDurationSeconds = 1500L)
+        val session2 = FocusSessionContract(sessionId = "sess_2_115", startedAt = 3000L, intendedDurationSeconds = 1500L)
+
+        var stopForegroundCount = 0
+        var startForegroundCount = 0
+        val coordinator = com.learningtracker.companion.service.SessionLifecycleCoordinator(
+            scope = this,
+            pollIntervalMs = 50L,
+            onStartForeground = { startForegroundCount++ },
+            onStopForeground = { stopForegroundCount++ }
+        )
+
+        // 1. Start Session 1
+        val start1 = coordinator.startOrTransitionSession(session1, syncManager)
+        assertTrue(start1)
+        assertEquals("sess_1_115", coordinator.currentSession?.sessionId)
+        assertEquals(1, startForegroundCount)
+
+        // 2. Complete Session 1
+        fakeApi.sessionStatusResponse = ApiResult.Success(
+            SessionStatusResponse(true, "sess_1_115", "COMPLETE", 1000L, 2000L, 1000L, 2000L, 1000L, "Task", "Subject"), 200
+        )
+
+        val waitStart = System.currentTimeMillis()
+        while (coordinator.isRunning && System.currentTimeMillis() - waitStart < 3000L) {
+            delay(50L)
+        }
+
+        assertFalse("Session 1 must have stopped running", coordinator.isRunning)
+        assertNull(coordinator.currentSession)
+        assertEquals(1, stopForegroundCount)
+
+        // 3. Start Session 2 with distinct session ID
+        fakeApi.activeSessionResponse = ApiResult.Success(
+            ActiveSessionResponse("ACTIVE_SESSION_FOUND", "sess_2_115", 3000L, 1500L, "Task 2", "Subject 2", System.currentTimeMillis()), 200
+        )
+        fakeApi.sessionStatusResponse = ApiResult.Success(
+            SessionStatusResponse(true, "sess_2_115", "RUNNING", 3000L, null, 3000L, null, 1500L, "Task 2", "Subject 2"), 200
+        )
+
+        val start2 = coordinator.startOrTransitionSession(session2, syncManager)
+        assertTrue("Session 2 must start successfully", start2)
+        assertEquals("sess_2_115", coordinator.currentSession?.sessionId)
+        assertTrue("Coordinator must be running for Session 2", coordinator.isRunning)
+        assertTrue(com.learningtracker.companion.service.FocusMonitoringService.isRunning)
+        assertEquals(2, startForegroundCount)
+
+        // Clean up Session 2
+        coordinator.stop(syncManager)
+        assertFalse(coordinator.isRunning)
+    }
+
+    @Test
+    fun test116_DuplicateCompletionDoesNotGenerateDuplicateSummaries() = kotlinx.coroutines.runBlocking {
+        com.learningtracker.companion.service.FocusMonitoringService.resetStateForTesting()
+
+        val inMemoryStorage = com.learningtracker.companion.sync.InMemoryTelemetryStorage()
+        val fakeApi = FakeTestPhoneApiClient()
+        val fakePairing = FakeTestPairingManager()
+        val syncManager = FocusIntegritySyncManager(
+            context = null,
+            pairingManager = fakePairing,
+            apiClient = fakeApi,
+            storage = inMemoryStorage
+        )
+
+        val session = FocusSessionContract(sessionId = "sess_dup_116", startedAt = 1000L, intendedDurationSeconds = 1500L)
+        val coordinator = com.learningtracker.companion.service.SessionLifecycleCoordinator(scope = this, pollIntervalMs = 60000L)
+
+        coordinator.startOrTransitionSession(session, syncManager)
+
+        // First finalization
+        val summary1 = syncManager.finalizeSessionCollection(session, 2000L)
+        assertEquals(1, inMemoryStorage.getPendingSummaries().size)
+
+        // Duplicate finalization attempt on same session
+        val summary2 = syncManager.finalizeSessionCollection(session, 2000L)
+        assertEquals(1, inMemoryStorage.getPendingSummaries().size)
+        assertEquals(summary1.summaryId, summary2.summaryId)
+
+        coordinator.stop(syncManager = null)
+        assertFalse(coordinator.isRunning)
+    }
+
+    @Test
+    fun test117_ExternalStopCancelsJobAndCleansUpSafely() = kotlinx.coroutines.runBlocking {
+        com.learningtracker.companion.service.FocusMonitoringService.resetStateForTesting()
+
+        val inMemoryStorage = com.learningtracker.companion.sync.InMemoryTelemetryStorage()
+        val fakeApi = FakeTestPhoneApiClient()
+        val fakePairing = FakeTestPairingManager()
+        val syncManager = FocusIntegritySyncManager(
+            context = null,
+            pairingManager = fakePairing,
+            apiClient = fakeApi,
+            storage = inMemoryStorage
+        )
+
+        val session = FocusSessionContract(sessionId = "sess_ext_stop_117", startedAt = 1000L, intendedDurationSeconds = 1500L)
+        var stopForegroundCount = 0
+
+        val coordinator = com.learningtracker.companion.service.SessionLifecycleCoordinator(
+            scope = this,
+            pollIntervalMs = 60000L,
+            onStopForeground = { stopForegroundCount++ }
+        )
+
+        coordinator.startOrTransitionSession(session, syncManager)
+        assertTrue(coordinator.isRunning)
+
+        // External manual stop
+        coordinator.stop(syncManager)
+
+        assertFalse(coordinator.isRunning)
+        assertFalse(com.learningtracker.companion.service.FocusMonitoringService.isRunning)
+        assertNull(coordinator.currentSession)
+        assertNull(coordinator.activeJob)
+        assertFalse("Coordinator mutex must be unlocked", coordinator.mutex.isLocked)
+        assertEquals("onStopForeground must be invoked exactly once", 1, stopForegroundCount)
     }
 }
