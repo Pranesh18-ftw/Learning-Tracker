@@ -53,6 +53,8 @@ describe('Stage 2B.2: Firebase Admin Runtime & Modular SDK Integration Suite', (
     delete process.env.FIREBASE_CLIENT_EMAIL;
     delete process.env.FIREBASE_PRIVATE_KEY;
     delete process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
+    delete process.env.PHONE_DIAGNOSTIC_SECRET;
+    delete process.env.DIAGNOSTIC_SECRET;
   });
 
   afterEach(() => {
@@ -304,8 +306,8 @@ describe('Stage 2B.2: Firebase Admin Runtime & Modular SDK Integration Suite', (
   // =========================================================================
   // 6. HEALTH-CHECK ACCURACY (/status)
   // =========================================================================
-  describe('Health-Check Semantics & Distinction', () => {
-    test('16. /status reports storageConfigured: false and state: MISSING_CONFIGURATION when unconfigured', async () => {
+  describe('Health-Check Semantics & Diagnostic Protection', () => {
+    test('16. Public /status reports ONLY approved contract fields to unauthenticated callers when unconfigured', async () => {
       const res = await handlePhoneApiRequest({
         httpMethod: 'GET',
         path: '/status'
@@ -313,13 +315,20 @@ describe('Stage 2B.2: Firebase Admin Runtime & Modular SDK Integration Suite', (
 
       expect(res.statusCode).toBe(200);
       const data = JSON.parse(res.body);
-      expect(data.status).toBe('OK');
-      expect(data.storageConfigured).toBe(false);
-      expect(data.storageState).toBe('MISSING_CONFIGURATION');
-      expect(data.databaseConnected).toBeNull();
+      expect(data).toEqual({
+        status: 'OK',
+        service: 'learning-tracker-phone-connection',
+        version: '1.0.0'
+      });
+      // Explicitly verify sensitive infrastructure details are never exposed publicly
+      expect(data.storageConfigured).toBeUndefined();
+      expect(data.storageState).toBeUndefined();
+      expect(data.storageDetails).toBeUndefined();
+      expect(data.databaseConnected).toBeUndefined();
+      expect(Object.keys(data).sort()).toEqual(['service', 'status', 'version']);
     });
 
-    test('17. /status reports INITIALIZATION_FAILED when credentials JSON is invalid', async () => {
+    test('17. Public /status returns ONLY approved fields and does not leak internal exception details when credentials JSON is invalid', async () => {
       process.env.FIREBASE_SERVICE_ACCOUNT_KEY = '{ bad json';
 
       const res = await handlePhoneApiRequest({
@@ -329,12 +338,17 @@ describe('Stage 2B.2: Firebase Admin Runtime & Modular SDK Integration Suite', (
 
       expect(res.statusCode).toBe(200);
       const data = JSON.parse(res.body);
-      expect(data.storageConfigured).toBe(false);
-      expect(data.storageState).toBe('INITIALIZATION_FAILED');
-      expect(data.databaseConnected).toBeNull();
+      expect(data).toEqual({
+        status: 'OK',
+        service: 'learning-tracker-phone-connection',
+        version: '1.0.0'
+      });
+      expect(data.storageDetails).toBeUndefined();
+      expect(JSON.stringify(data)).not.toContain('bad json');
+      expect(JSON.stringify(data)).not.toContain('INITIALIZATION_FAILED');
     });
 
-    test('18. /status reports RUNTIME_READY and does NOT probe database without probe=true', async () => {
+    test('18. Public /status does NOT probe database or invoke Firestore collection', async () => {
       const mockDb = { collection: jest.fn() };
       setFirebaseAdminFirestoreForTest(mockDb);
 
@@ -345,17 +359,15 @@ describe('Stage 2B.2: Firebase Admin Runtime & Modular SDK Integration Suite', (
 
       expect(res.statusCode).toBe(200);
       const data = JSON.parse(res.body);
-      expect(data.storageConfigured).toBe(true);
-      expect(data.storageState).toBe('RUNTIME_READY');
-      expect(data.databaseConnected).toBeNull();
-      // Ensure no unnecessary database read occurred
+      expect(data.status).toBe('OK');
+      expect(data.service).toBe('learning-tracker-phone-connection');
+      expect(data.version).toBe('1.0.0');
+      // Ensure zero Firestore reads occurred for public request
       expect(mockDb.collection).not.toHaveBeenCalled();
     });
 
-    test('19. /status with probe=true tests connectivity and reports CONNECTED when probe succeeds', async () => {
-      const mockDoc = { get: jest.fn().mockResolvedValue({ exists: true }) };
-      const mockCollection = { doc: jest.fn().mockReturnValue(mockDoc) };
-      const mockDb = { collection: jest.fn().mockReturnValue(mockCollection) };
+    test('19a. /status with probe=true without administrative credentials is rejected with 401 and no Firestore read', async () => {
+      const mockDb = { collection: jest.fn() };
       setFirebaseAdminFirestoreForTest(mockDb);
 
       const res = await handlePhoneApiRequest({
@@ -364,16 +376,110 @@ describe('Stage 2B.2: Firebase Admin Runtime & Modular SDK Integration Suite', (
         queryStringParameters: { probe: 'true' }
       });
 
+      expect(res.statusCode).toBe(401);
+      const data = JSON.parse(res.body);
+      expect(data.code).toBe('UNAUTHORIZED_DIAGNOSTIC');
+      expect(data.error).toBe('Authentication required for diagnostic probe.');
+      // Enforce zero Firestore reads for unauthenticated probe requests
+      expect(mockDb.collection).not.toHaveBeenCalled();
+    });
+
+    test('19b. /status with probe=true with invalid credentials or pairing secret is rejected with 403 and no Firestore read', async () => {
+      process.env.PHONE_DIAGNOSTIC_SECRET = 'valid-super-secret-admin-diag-token';
+      process.env.PAIRING_SECRET_PEPPER = 'pairing-pepper-do-not-reuse-as-diag';
+
+      const mockDb = { collection: jest.fn() };
+      setFirebaseAdminFirestoreForTest(mockDb);
+
+      // Attempt 1: Invalid arbitrary token
+      const resWrong = await handlePhoneApiRequest({
+        httpMethod: 'GET',
+        path: '/status',
+        queryStringParameters: { probe: 'true' },
+        headers: { authorization: 'Bearer wrong-diagnostic-token' }
+      });
+      expect(resWrong.statusCode).toBe(403);
+      expect(JSON.parse(resWrong.body).code).toBe('FORBIDDEN_DIAGNOSTIC');
+      expect(mockDb.collection).not.toHaveBeenCalled();
+
+      // Attempt 2: Reusing pairing secret pepper must be explicitly rejected
+      const resPepper = await handlePhoneApiRequest({
+        httpMethod: 'GET',
+        path: '/status',
+        queryStringParameters: { probe: 'true' },
+        headers: { authorization: `Bearer ${process.env.PAIRING_SECRET_PEPPER}` }
+      });
+      expect(resPepper.statusCode).toBe(403);
+      expect(JSON.parse(resPepper.body).code).toBe('FORBIDDEN_DIAGNOSTIC');
+      expect(mockDb.collection).not.toHaveBeenCalled();
+
+      // Attempt 3: Ordinary user token must not grant administrative diagnostic access
+      const resUser = await handlePhoneApiRequest({
+        httpMethod: 'GET',
+        path: '/status',
+        queryStringParameters: { probe: 'true' },
+        headers: { authorization: 'Bearer normal-user-id-token' }
+      });
+      expect(resUser.statusCode).toBe(403);
+      expect(JSON.parse(resUser.body).code).toBe('FORBIDDEN_DIAGNOSTIC');
+      expect(mockDb.collection).not.toHaveBeenCalled();
+
+      // Attempt 4: Diagnostic probe without configured server secret fails closed (403 DIAGNOSTIC_NOT_CONFIGURED)
+      delete process.env.PHONE_DIAGNOSTIC_SECRET;
+      delete process.env.DIAGNOSTIC_SECRET;
+      const resDisabled = await handlePhoneApiRequest({
+        httpMethod: 'GET',
+        path: '/status',
+        queryStringParameters: { probe: 'true' },
+        headers: { authorization: 'Bearer some-token' }
+      });
+      expect(resDisabled.statusCode).toBe(403);
+      expect(JSON.parse(resDisabled.body).code).toBe('DIAGNOSTIC_NOT_CONFIGURED');
+      expect(mockDb.collection).not.toHaveBeenCalled();
+    });
+
+    test('19c. /status with probe=true with valid administrative credentials performs probe and returns sanitized diagnostic data', async () => {
+      process.env.PHONE_DIAGNOSTIC_SECRET = 'valid-super-secret-admin-diag-token';
+
+      const mockDoc = { get: jest.fn().mockResolvedValue({ exists: true }) };
+      const mockCollection = { doc: jest.fn().mockReturnValue(mockDoc) };
+      const mockDb = { collection: jest.fn().mockReturnValue(mockCollection) };
+      setFirebaseAdminFirestoreForTest(mockDb);
+
+      // Test via Authorization: Bearer
+      const res = await handlePhoneApiRequest({
+        httpMethod: 'GET',
+        path: '/status',
+        queryStringParameters: { probe: 'true' },
+        headers: { authorization: 'Bearer valid-super-secret-admin-diag-token' }
+      });
+
       expect(res.statusCode).toBe(200);
       const data = JSON.parse(res.body);
+      expect(data.status).toBe('OK');
+      expect(data.service).toBe('learning-tracker-phone-connection');
+      expect(data.version).toBe('1.0.0');
       expect(data.storageConfigured).toBe(true);
       expect(data.storageState).toBe('CONNECTED');
       expect(data.databaseConnected).toBe(true);
+      expect(data.storageDetails).toBe('Database probe connected successfully.');
       expect(mockDb.collection).toHaveBeenCalledWith('_health');
+
+      // Test via X-Diagnostic-Token header
+      const resHeader = await handlePhoneApiRequest({
+        httpMethod: 'GET',
+        path: '/status',
+        queryStringParameters: { probe: 'true' },
+        headers: { 'x-diagnostic-token': 'valid-super-secret-admin-diag-token' }
+      });
+      expect(resHeader.statusCode).toBe(200);
+      expect(JSON.parse(resHeader.body).databaseConnected).toBe(true);
     });
 
-    test('20. /status with probe=true reports OPERATION_FAILED when database probe throws', async () => {
-      const mockDoc = { get: jest.fn().mockRejectedValue(new Error('Connection timeout to Firestore.')) };
+    test('20. /status with probe=true reports OPERATION_FAILED and sanitized details without leaking internal error messages when probe throws', async () => {
+      process.env.PHONE_DIAGNOSTIC_SECRET = 'valid-super-secret-admin-diag-token';
+
+      const mockDoc = { get: jest.fn().mockRejectedValue(new Error('Connection timeout to Firestore at 10.0.0.1:443.')) };
       const mockCollection = { doc: jest.fn().mockReturnValue(mockDoc) };
       const mockDb = { collection: jest.fn().mockReturnValue(mockCollection) };
       setFirebaseAdminFirestoreForTest(mockDb);
@@ -381,7 +487,8 @@ describe('Stage 2B.2: Firebase Admin Runtime & Modular SDK Integration Suite', (
       const res = await handlePhoneApiRequest({
         httpMethod: 'GET',
         path: '/status',
-        queryStringParameters: { probe: 'true' }
+        queryStringParameters: { probe: 'true' },
+        headers: { authorization: 'Bearer valid-super-secret-admin-diag-token' }
       });
 
       expect(res.statusCode).toBe(200);
@@ -389,7 +496,10 @@ describe('Stage 2B.2: Firebase Admin Runtime & Modular SDK Integration Suite', (
       expect(data.storageConfigured).toBe(false);
       expect(data.storageState).toBe('OPERATION_FAILED');
       expect(data.databaseConnected).toBe(false);
-      expect(data.storageDetails).toContain('Connection timeout to Firestore');
+      // Ensure raw internal error, stack trace, and IP address are NOT leaked
+      expect(data.storageDetails).toBe('Database connectivity probe failed.');
+      expect(JSON.stringify(data)).not.toContain('Connection timeout to Firestore');
+      expect(JSON.stringify(data)).not.toContain('10.0.0.1');
     });
   });
 
@@ -471,17 +581,38 @@ describe('Stage 2B.2: Firebase Admin Runtime & Modular SDK Integration Suite', (
       expect(status.appInitialized).toBe(false);
       expect(status.details).toContain("Cannot find module 'firebase-admin/app'");
 
+      // Public unauthenticated request returns ONLY approved fields
       const res = await handlePhoneApiRequest({
         httpMethod: 'GET',
         path: '/status'
       });
       expect(res.statusCode).toBe(200);
       const body = JSON.parse(res.body);
-      expect(body.status).toBe('OK');
-      expect(body.storageConfigured).toBe(false);
-      expect(body.storageState).toBe('SDK_NOT_AVAILABLE');
-      expect(body.storageDetails).toContain("Cannot find module 'firebase-admin/app'");
-      expect(body.databaseConnected).toBeNull();
+      expect(body).toEqual({
+        status: 'OK',
+        service: 'learning-tracker-phone-connection',
+        version: '1.0.0'
+      });
+      expect(body.storageConfigured).toBeUndefined();
+      expect(body.storageState).toBeUndefined();
+      expect(body.storageDetails).toBeUndefined();
+      expect(body.databaseConnected).toBeUndefined();
+      expect(JSON.stringify(body)).not.toContain("Cannot find module 'firebase-admin/app'");
+
+      // Privileged administrative diagnostic request returns sanitized status without leaking stack or path
+      process.env.PHONE_DIAGNOSTIC_SECRET = 'admin-diag-secret';
+      const diagRes = await handlePhoneApiRequest({
+        httpMethod: 'GET',
+        path: '/status',
+        queryStringParameters: { probe: 'true' },
+        headers: { authorization: 'Bearer admin-diag-secret' }
+      });
+      expect(diagRes.statusCode).toBe(200);
+      const diagBody = JSON.parse(diagRes.body);
+      expect(diagBody.storageConfigured).toBe(false);
+      expect(diagBody.storageState).toBe('SDK_NOT_AVAILABLE');
+      expect(diagBody.storageDetails).toBe('Storage dependencies unavailable.');
+      expect(JSON.stringify(diagBody)).not.toContain("Cannot find module 'firebase-admin/app'");
     });
 
     test('26. SDK loads successfully but credentials are missing reports MISSING_CONFIGURATION with sdkLoaded: true', () => {

@@ -19,7 +19,8 @@
 
 import {
   authenticateWebRequest,
-  authenticateDeviceRequest
+  authenticateDeviceRequest,
+  authenticateDiagnosticRequest
 } from './phoneAuthenticationService.js';
 import {
   startPairingChallenge,
@@ -55,9 +56,32 @@ const STANDARD_HEADERS = {
   'Cache-Control': 'no-store, no-cache, must-revalidate',
   'X-Content-Type-Options': 'nosniff',
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With, X-Diagnostic-Token, X-Diagnostic-Secret',
   'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS'
 };
+
+/**
+ * Sanitizes diagnostic details so internal exception messages, stack traces,
+ * file paths, or credentials never leak to clients.
+ */
+export function sanitizeDiagnosticDetails(rawDetails, state) {
+  switch (state) {
+    case 'CONNECTED':
+      return 'Database probe connected successfully.';
+    case 'RUNTIME_READY':
+      return 'Storage engine initialized and ready.';
+    case 'OPERATION_FAILED':
+      return 'Database connectivity probe failed.';
+    case 'INITIALIZATION_FAILED':
+      return 'Storage service initialization failed.';
+    case 'MISSING_CONFIGURATION':
+      return 'Storage configuration is missing.';
+    case 'SDK_NOT_AVAILABLE':
+      return 'Storage dependencies unavailable.';
+    default:
+      return 'Storage diagnostic status evaluated.';
+  }
+}
 
 function jsonResponse(statusCode, data) {
   return {
@@ -101,24 +125,57 @@ export async function handlePhoneApiRequest(event, injectedRepo = null) {
   // 2. Health / Status Check
   if (method === 'GET' && (path === '/' || path === '/status')) {
     const probe = event.queryStringParameters?.probe === 'true';
-    const storageInfo = typeof repository.getStorageStatus === 'function'
-      ? await repository.getStorageStatus({ probe })
-      : {
-          configured: repository.isConfigured(),
-          state: repository.isConfigured() ? 'RUNTIME_READY' : 'MISSING_CONFIGURATION',
-          details: repository.isConfigured() ? 'Storage ready' : 'Storage unconfigured',
-          connectivityTested: false,
-          connected: null
-        };
 
+    // Privileged diagnostic probe requires verified administrative authorization
+    if (probe) {
+      const auth = authenticateDiagnosticRequest(event);
+      if (!auth.authorized) {
+        return jsonResponse(auth.statusCode || 401, {
+          error: auth.error,
+          code: auth.code
+        });
+      }
+
+      // Authorized administrative probe: test connectivity with sanitized outputs
+      let storageInfo;
+      try {
+        storageInfo = typeof repository.getStorageStatus === 'function'
+          ? await repository.getStorageStatus({ probe: true })
+          : {
+              configured: repository.isConfigured(),
+              state: repository.isConfigured() ? 'RUNTIME_READY' : 'MISSING_CONFIGURATION',
+              details: repository.isConfigured() ? 'Storage ready' : 'Storage unconfigured',
+              connectivityTested: false,
+              connected: null
+            };
+      } catch (err) {
+        return jsonResponse(200, {
+          status: 'OK',
+          service: 'learning-tracker-phone-connection',
+          version: '1.0.0',
+          storageConfigured: false,
+          storageState: 'OPERATION_FAILED',
+          storageDetails: 'Database connectivity probe failed.',
+          databaseConnected: false
+        });
+      }
+
+      return jsonResponse(200, {
+        status: 'OK',
+        service: 'learning-tracker-phone-connection',
+        version: '1.0.0',
+        storageConfigured: Boolean(storageInfo.configured),
+        storageState: storageInfo.state || 'UNKNOWN',
+        storageDetails: sanitizeDiagnosticDetails(storageInfo.details, storageInfo.state),
+        databaseConnected: storageInfo.connected !== undefined ? storageInfo.connected : null
+      });
+    }
+
+    // Public Health Check: Unauthenticated callers receive only approved contract fields
     return jsonResponse(200, {
       status: 'OK',
       service: 'learning-tracker-phone-connection',
-      version: '1.0.0',
-      storageConfigured: storageInfo.configured,
-      storageState: storageInfo.state,
-      storageDetails: storageInfo.details,
-      databaseConnected: storageInfo.connected !== undefined ? storageInfo.connected : null
+      version: '1.0.0'
     });
   }
 

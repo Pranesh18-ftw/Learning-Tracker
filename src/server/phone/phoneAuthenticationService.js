@@ -238,3 +238,103 @@ export async function authenticateDeviceRequest(authHeader, repository) {
     accountId: `usr_${device.ownerUid}`
   };
 }
+
+/**
+ * Constant-time string comparison using SHA-256 digest buffers to prevent timing side-channel attacks.
+ * Buffers are guaranteed to be equal length (32 bytes), avoiding timing variations and buffer length errors.
+ */
+export function constantTimeCompare(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  if (!a || !b) return false;
+  const hashA = crypto.createHash('sha256').update(a, 'utf8').digest();
+  const hashB = crypto.createHash('sha256').update(b, 'utf8').digest();
+  return crypto.timingSafeEqual(hashA, hashB);
+}
+
+/**
+ * Extracts diagnostic token from request headers (Authorization: Bearer <token> or X-Diagnostic-Token / X-Diagnostic-Secret).
+ */
+export function extractDiagnosticToken(event) {
+  if (!event || !event.headers || typeof event.headers !== 'object') return null;
+  const headers = event.headers;
+
+  // 1. Check custom diagnostic headers case-insensitively
+  for (const [key, value] of Object.entries(headers)) {
+    const lowerKey = key.toLowerCase();
+    if ((lowerKey === 'x-diagnostic-token' || lowerKey === 'x-diagnostic-secret') &&
+        typeof value === 'string' && value.trim().length > 0) {
+      return value.trim();
+    }
+  }
+
+  // 2. Check Authorization: Bearer <token>
+  const authHeader = headers.authorization || headers.Authorization;
+  if (authHeader && typeof authHeader === 'string') {
+    const parts = authHeader.trim().split(' ');
+    if (parts.length === 2 && parts[0].toLowerCase() === 'bearer' && parts[1].trim().length > 0) {
+      return parts[1].trim();
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Authenticates an administrative diagnostic request.
+ * 
+ * Rules:
+ * 1. Requires a dedicated server-side diagnostic credential (PHONE_DIAGNOSTIC_SECRET or DIAGNOSTIC_SECRET).
+ * 2. If diagnostic credential is not configured, diagnostic access fails closed (403).
+ * 3. Rejects requests with missing credentials (401).
+ * 4. Strictly forbids reuse of pairing secrets (PAIRING_SECRET_PEPPER).
+ * 5. Uses constant-time comparison to prevent timing attacks.
+ * 6. Never reveals internal exception details or tokens.
+ */
+export function authenticateDiagnosticRequest(event) {
+  const providedToken = extractDiagnosticToken(event);
+  if (!providedToken) {
+    return {
+      authorized: false,
+      error: 'Authentication required for diagnostic probe.',
+      code: 'UNAUTHORIZED_DIAGNOSTIC',
+      statusCode: 401
+    };
+  }
+
+  const configuredSecret = process.env.PHONE_DIAGNOSTIC_SECRET || process.env.DIAGNOSTIC_SECRET || null;
+
+  if (!configuredSecret || typeof configuredSecret !== 'string' || configuredSecret.trim().length === 0) {
+    return {
+      authorized: false,
+      error: 'Administrative diagnostic probe is not configured on this server.',
+      code: 'DIAGNOSTIC_NOT_CONFIGURED',
+      statusCode: 403
+    };
+  }
+
+  // Strictly forbid reuse of pairing secret pepper for diagnostics
+  const pairingPepper = process.env.PAIRING_SECRET_PEPPER;
+  if (pairingPepper && constantTimeCompare(providedToken, pairingPepper)) {
+    return {
+      authorized: false,
+      error: 'Invalid administrative diagnostic credentials.',
+      code: 'FORBIDDEN_DIAGNOSTIC',
+      statusCode: 403
+    };
+  }
+
+  const isValid = constantTimeCompare(providedToken, configuredSecret.trim());
+  if (!isValid) {
+    return {
+      authorized: false,
+      error: 'Invalid administrative diagnostic credentials.',
+      code: 'FORBIDDEN_DIAGNOSTIC',
+      statusCode: 403
+    };
+  }
+
+  return {
+    authorized: true
+  };
+}
+

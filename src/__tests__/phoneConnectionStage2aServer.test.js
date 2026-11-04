@@ -760,7 +760,7 @@ describe('Phone Connection v1 — Stage 2A Server & Session Relay Test Suite', (
         .toThrow(StorageUnconfiguredError);
     });
 
-    test('27. Public health endpoint reports OK and storageConfigured accurately', async () => {
+    test('27. Public health endpoint reports OK and only approved contract fields to unauthenticated callers', async () => {
       const res = await handlePhoneApiRequest({
         httpMethod: 'GET',
         path: '/api/v1/phone/status'
@@ -770,7 +770,12 @@ describe('Phone Connection v1 — Stage 2A Server & Session Relay Test Suite', (
       const data = JSON.parse(res.body);
       expect(data.status).toBe('OK');
       expect(data.service).toBe('learning-tracker-phone-connection');
-      expect(data.storageConfigured).toBe(true);
+      expect(data.version).toBe('1.0.0');
+      expect(data.storageConfigured).toBeUndefined();
+      expect(data.storageState).toBeUndefined();
+      expect(data.storageDetails).toBeUndefined();
+      expect(data.databaseConnected).toBeUndefined();
+      expect(Object.keys(data).sort()).toEqual(['service', 'status', 'version']);
     });
 
     test('28. GET /focus-sessions/:sessionId/status returns authoritative session status and timestamps to paired device', async () => {
