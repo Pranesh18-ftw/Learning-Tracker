@@ -17,7 +17,11 @@ import com.learningtracker.companion.tracker.RawTelemetryEvent
  */
 object UsageAccessHelper {
 
+    @Volatile
+    internal var usageAccessOverride: ((Context) -> Boolean)? = null
+
     fun hasUsageAccess(context: Context): Boolean {
+        usageAccessOverride?.let { return it(context) }
         return try {
             val appOps = context.getSystemService(Context.APP_OPS_SERVICE) as? AppOpsManager ?: return false
             val mode = appOps.checkOpNoThrow(
@@ -29,6 +33,10 @@ object UsageAccessHelper {
         } catch (e: Exception) {
             false
         }
+    }
+
+    internal fun resetForTesting() {
+        usageAccessOverride = null
     }
 
     fun createUsageAccessIntent(): Intent {

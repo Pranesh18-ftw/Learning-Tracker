@@ -29,7 +29,8 @@ class FocusSummaryCalculator {
         sessionEndTime: Long,
         interruptions: List<Interruption>,
         summaryId: String = "sum_" + UUID.randomUUID().toString().replace("-", ""),
-        collectionStatus: CollectionStatus = CollectionStatus.COMPLETE
+        collectionStatus: CollectionStatus = CollectionStatus.COMPLETE,
+        boundaryConfidence: com.learningtracker.companion.model.BoundaryConfidence = com.learningtracker.companion.model.BoundaryConfidence.AUTHORITATIVE
     ): FocusSummary {
         val observedWindowSeconds = ((sessionEndTime - session.startedAt) / 1000L).coerceAtLeast(0L)
 
@@ -69,7 +70,10 @@ class FocusSummaryCalculator {
             .take(50)
 
         // Calculate longest uninterrupted stretch
-        val longestStretch = if (collectionStatus == CollectionStatus.PERMISSION_REQUIRED || collectionStatus == CollectionStatus.COLLECTION_FAILED) {
+        val longestStretch = if (collectionStatus == CollectionStatus.PERMISSION_REQUIRED ||
+            collectionStatus == CollectionStatus.COLLECTION_FAILED ||
+            collectionStatus == CollectionStatus.NO_OBSERVATIONS ||
+            (collectionStatus == CollectionStatus.PARTIAL && interruptions.isEmpty())) {
             0L
         } else {
             calculateLongestUninterruptedSeconds(
@@ -78,6 +82,13 @@ class FocusSummaryCalculator {
                 interruptions = interruptions
             )
         }
+
+        val timeline = buildTimelineIntervals(
+            sessionStart = session.startedAt,
+            sessionEnd = sessionEndTime,
+            interruptions = interruptions,
+            collectionStatus = collectionStatus
+        )
 
         return FocusSummary(
             sessionId = session.sessionId,
@@ -92,11 +103,102 @@ class FocusSummaryCalculator {
             longestUninterruptedSeconds = longestStretch,
             interruptions = interruptions,
             appBreakdown = appBreakdown,
+            timeline = timeline,
             collectionStatus = collectionStatus,
+            boundaryConfidence = boundaryConfidence,
             timestamp = sessionEndTime,
             syncState = "PENDING"
         )
     }
+
+    /**
+     * Constructs continuous timeline intervals across the session window.
+     */
+    fun buildTimelineIntervals(
+        sessionStart: Long,
+        sessionEnd: Long,
+        interruptions: List<Interruption>,
+        collectionStatus: CollectionStatus = CollectionStatus.COMPLETE
+    ): List<com.learningtracker.companion.model.TimelineInterval> {
+        if (sessionEnd <= sessionStart) return emptyList()
+
+        if (collectionStatus == CollectionStatus.PERMISSION_REQUIRED ||
+            collectionStatus == CollectionStatus.COLLECTION_FAILED ||
+            collectionStatus == CollectionStatus.NO_OBSERVATIONS) {
+            return listOf(
+                com.learningtracker.companion.model.TimelineInterval(
+                    id = "int_unobserved",
+                    startTime = sessionStart,
+                    endTime = sessionEnd,
+                    classification = "UNOBSERVED",
+                    note = if (collectionStatus == CollectionStatus.NO_OBSERVATIONS) "No telemetry observations" else "Telemetry unavailable"
+                )
+            )
+        }
+
+        if (collectionStatus == CollectionStatus.PARTIAL && interruptions.isEmpty()) {
+            return listOf(
+                com.learningtracker.companion.model.TimelineInterval(
+                    id = "int_partial",
+                    startTime = sessionStart,
+                    endTime = sessionEnd,
+                    classification = "UNOBSERVED",
+                    note = "Incomplete telemetry (interrupted session)"
+                )
+            )
+        }
+
+        val distractionInterruptions = interruptions
+            .filter { it.category == AppCategory.DISTRACTION }
+            .sortedBy { it.startTime }
+
+        val intervals = mutableListOf<com.learningtracker.companion.model.TimelineInterval>()
+        var cursor = sessionStart
+
+        for (interruption in distractionInterruptions) {
+            val clampedStart = interruption.startTime.coerceIn(sessionStart, sessionEnd)
+            val clampedEnd = interruption.endTime.coerceIn(sessionStart, sessionEnd)
+
+            if (clampedStart > cursor) {
+                intervals.add(
+                    com.learningtracker.companion.model.TimelineInterval(
+                        id = "focus_${intervals.size}",
+                        startTime = cursor,
+                        endTime = clampedStart,
+                        classification = "FOCUSED"
+                    )
+                )
+            }
+
+            if (clampedEnd > clampedStart) {
+                intervals.add(
+                    com.learningtracker.companion.model.TimelineInterval(
+                        id = "dist_${intervals.size}",
+                        startTime = clampedStart,
+                        endTime = clampedEnd,
+                        classification = "DISTRACTION",
+                        packageName = interruption.packageName,
+                        appCategory = "distraction"
+                    )
+                )
+                cursor = clampedEnd
+            }
+        }
+
+        if (sessionEnd > cursor) {
+            intervals.add(
+                com.learningtracker.companion.model.TimelineInterval(
+                    id = "focus_${intervals.size}",
+                    startTime = cursor,
+                    endTime = sessionEnd,
+                    classification = "FOCUSED"
+                )
+            )
+        }
+
+        return intervals
+    }
+
 
     /**
      * Finds the maximum uninterrupted continuous time gap across the session window.

@@ -21,13 +21,13 @@ sealed class PairingResult {
  * NEVER accesses or transmits persistent hardware IDs (IMEI, SIM serial, MAC address).
  * Authenticates with POST /api/v1/phone/pair/complete and stores token in AndroidKeyStore.
  */
-class PairingManager(
-    private val context: Context,
-    val secureStore: SecureCredentialStore = SecureCredentialStore(context),
+open class PairingManager(
+    private val context: Context? = null,
+    val secureStore: SecureCredentialStore? = context?.let { SecureCredentialStore(it) },
     val apiClient: PhoneApiClient = PhoneApiClient()
 ) {
     init {
-        secureStore.getServerBaseUrl()?.let { savedUrl ->
+        secureStore?.getServerBaseUrl()?.let { savedUrl ->
             if (savedUrl.isNotBlank()) {
                 apiClient.setBaseUrl(savedUrl)
             }
@@ -38,28 +38,28 @@ class PairingManager(
         const val DEVICE_INACTIVITY_EXPIRY_MS = 30L * 24 * 60 * 60 * 1000L // 30 days
     }
 
-    fun isExpired(): Boolean {
-        val pairedAt = secureStore.getPairedAt()
+    open fun isExpired(): Boolean {
+        val pairedAt = secureStore?.getPairedAt() ?: return false
         if (pairedAt <= 0L) return false
         return (System.currentTimeMillis() - pairedAt) > DEVICE_INACTIVITY_EXPIRY_MS
     }
 
-    fun isPaired(): Boolean = secureStore.isPaired() && !isExpired()
+    open fun isPaired(): Boolean = (secureStore?.isPaired() ?: false) && !isExpired()
 
-    fun isRevoked(): Boolean = secureStore.isRevoked()
+    open fun isRevoked(): Boolean = secureStore?.isRevoked() ?: false
 
-    fun markRevoked() {
-        secureStore.markRevoked()
+    open fun markRevoked() {
+        secureStore?.markRevoked()
     }
 
-    fun getDeviceAssociation(): DeviceAssociation? {
-        val id = secureStore.getDeviceId() ?: return null
-        val name = secureStore.getDeviceName() ?: Build.MODEL
-        val pairedAt = secureStore.getPairedAt()
+    open fun getDeviceAssociation(): DeviceAssociation? {
+        val id = secureStore?.getDeviceId() ?: return null
+        val name = secureStore?.getDeviceName() ?: try { Build.MODEL } catch (_: Throwable) { "Android Device" }
+        val pairedAt = secureStore?.getPairedAt() ?: System.currentTimeMillis()
         return DeviceAssociation(id, name, pairedAccountEmail = null, pairedAt = pairedAt)
     }
 
-    fun getDeviceToken(): String? = secureStore.getDeviceToken()
+    open fun getDeviceToken(): String? = secureStore?.getDeviceToken()
 
     /**
      * Executes authoritative pairing ceremony with server:
@@ -98,14 +98,14 @@ class PairingManager(
                 val data = apiResult.data
                 try {
                     // Securely store credentials in AndroidKeyStore
-                    secureStore.saveDeviceCredential(
+                    secureStore?.saveDeviceCredential(
                         deviceId = data.deviceId,
                         deviceName = deviceName,
                         deviceToken = data.deviceToken,
                         protocolVersion = data.protocolVersion,
                         pairedAt = data.pairedAt
                     )
-                    secureStore.saveServerBaseUrl(apiClient.getBaseUrl())
+                    secureStore?.saveServerBaseUrl(apiClient.getBaseUrl())
                     PairingResult.Success(
                         DeviceAssociation(
                             deviceAssociationId = data.deviceId,
@@ -134,6 +134,6 @@ class PairingManager(
      * Disconnects the device and clears all locally stored credentials and cryptographic keys.
      */
     fun unpair() {
-        secureStore.clearCredentials()
+        secureStore?.clearCredentials()
     }
 }

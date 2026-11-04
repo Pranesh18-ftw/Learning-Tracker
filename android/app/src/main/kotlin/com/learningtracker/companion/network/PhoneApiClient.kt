@@ -8,6 +8,8 @@ import java.io.InputStreamReader
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
+
 
 /**
  * Sealed result for API operations.
@@ -18,7 +20,8 @@ sealed class ApiResult<out T> {
         val code: String,
         val message: String,
         val statusCode: Int,
-        val isTransient: Boolean = false
+        val isTransient: Boolean = false,
+        val retryAfterHeader: String? = null
     ) : ApiResult<Nothing>()
 }
 
@@ -81,15 +84,23 @@ data class TelemetrySummaryPayload(
     val distractionSeconds: Long,
     val longestUninterruptedSeconds: Long,
     val appBreakdown: List<AppBreakdownItem> = emptyList(),
+    val timeline: List<com.learningtracker.companion.model.TimelineInterval> = emptyList(),
     val consentVersion: String = "1.0.0",
     val schemaVersion: String = "1.0.0"
 )
+
+data class TimelineSnapshotResponse(
+    val success: Boolean,
+    val sessionId: String,
+    val snapshotVersion: Int
+)
+
 
 /**
  * Native HTTP client for Learning Tracker Netlify Functions API.
  * Uses standard HttpURLConnection without heavy third-party networking bloat.
  */
-class PhoneApiClient(
+open class PhoneApiClient(
     initialBaseUrl: String? = null
 ) {
     companion object {
@@ -294,7 +305,7 @@ class PhoneApiClient(
      * Polls active focus session.
      * GET /focus-session/active
      */
-    fun getActiveSession(deviceToken: String): ApiResult<ActiveSessionResponse> {
+    open fun getActiveSession(deviceToken: String): ApiResult<ActiveSessionResponse> {
         val url = "$baseUrl/focus-session/active"
         return executeRequest("GET", url, body = null, token = deviceToken) { responseJson, _ ->
             val status = responseJson.optString("status", "NO_ACTIVE_SESSION")
@@ -329,7 +340,7 @@ class PhoneApiClient(
      * Discovers authoritative status and exact start/end timestamps of a specific session.
      * GET /focus-sessions/:sessionId/status
      */
-    fun getSessionStatus(sessionId: String, deviceToken: String): ApiResult<SessionStatusResponse> {
+    open fun getSessionStatus(sessionId: String, deviceToken: String): ApiResult<SessionStatusResponse> {
         val url = "$baseUrl/focus-sessions/$sessionId/status"
         return executeRequest("GET", url, body = null, token = deviceToken) { responseJson, _ ->
             SessionStatusResponse(
@@ -351,7 +362,7 @@ class PhoneApiClient(
      * Queries recently completed focus sessions that lack companion telemetry.
      * GET /focus-sessions/unreconciled
      */
-    fun getUnreconciledSessions(deviceToken: String, limit: Int = 5): ApiResult<List<FocusSessionContract>> {
+    open fun getUnreconciledSessions(deviceToken: String, limit: Int = 5): ApiResult<List<FocusSessionContract>> {
         val url = "$baseUrl/focus-sessions/unreconciled?limit=$limit"
         return executeRequest("GET", url, body = null, token = deviceToken) { responseJson, _ ->
             val sessionsArray = responseJson.optJSONArray("sessions") ?: JSONArray()
@@ -377,7 +388,7 @@ class PhoneApiClient(
      * Submits a completed focus window summary.
      * POST /telemetry-summaries
      */
-    fun submitTelemetrySummary(
+    open fun submitTelemetrySummary(
         payload: TelemetrySummaryPayload,
         deviceToken: String
     ): ApiResult<TelemetrySubmissionResponse> {
@@ -416,6 +427,23 @@ class PhoneApiClient(
             put("observedWindow", observedWindowJson)
             put("activitySummary", activitySummaryJson)
             put("consentVersion", payload.consentVersion)
+
+            if (payload.timeline.isNotEmpty()) {
+                val timelineArray = JSONArray()
+                payload.timeline.forEach { int ->
+                    timelineArray.put(JSONObject().apply {
+                        put("id", int.id)
+                        put("startTime", int.startTime)
+                        put("endTime", int.endTime)
+                        put("durationSeconds", int.durationSeconds)
+                        put("classification", int.classification)
+                        int.packageName?.let { put("packageName", it) }
+                        int.appCategory?.let { put("appCategory", it) }
+                        int.note?.let { put("note", it) }
+                    })
+                }
+                put("timeline", timelineArray)
+            }
         }
 
         return executeRequest("POST", url, rootJson.toString(), token = deviceToken) { responseJson, _ ->
@@ -428,6 +456,57 @@ class PhoneApiClient(
             )
         }
     }
+
+    /**
+     * Submits an incremental live timeline snapshot while a session is active.
+     * POST /focus-sessions/:sessionId/timeline
+     */
+    open fun postTimelineSnapshot(
+        sessionId: String,
+        snapshot: com.learningtracker.companion.model.TimelineSnapshot,
+        deviceToken: String
+    ): ApiResult<TimelineSnapshotResponse> {
+        val encodedSessionId = URLEncoder.encode(sessionId, "UTF-8")
+        val url = "$baseUrl/focus-sessions/$encodedSessionId/timeline"
+
+        val observedWindowJson = JSONObject().apply {
+            put("startedAt", snapshot.observedWindow.startedAt)
+            put("endedAt", snapshot.observedWindow.endedAt)
+        }
+
+        val intervalsArray = JSONArray()
+        snapshot.intervals.forEach { int ->
+            intervalsArray.put(JSONObject().apply {
+                put("id", int.id)
+                put("startTime", int.startTime)
+                put("endTime", int.endTime)
+                put("durationSeconds", int.durationSeconds)
+                put("classification", int.classification)
+                int.packageName?.let { put("packageName", it) }
+                int.appCategory?.let { put("appCategory", it) }
+                int.note?.let { put("note", it) }
+            })
+        }
+
+        val rootJson = JSONObject().apply {
+            put("schemaVersion", snapshot.schemaVersion)
+            put("sessionId", snapshot.sessionId)
+            put("snapshotVersion", snapshot.snapshotVersion)
+            put("timestamp", snapshot.timestamp)
+            put("observedWindow", observedWindowJson)
+            put("collectionStatus", snapshot.collectionStatus.name)
+            put("intervals", intervalsArray)
+        }
+
+        return executeRequest("POST", url, rootJson.toString(), token = deviceToken) { responseJson, _ ->
+            TimelineSnapshotResponse(
+                success = responseJson.optBoolean("success", true),
+                sessionId = responseJson.optString("sessionId", sessionId),
+                snapshotVersion = responseJson.optInt("snapshotVersion", snapshot.snapshotVersion)
+            )
+        }
+    }
+
 
     /**
      * Generic HTTP request runner with defensive stream handling and error mapping.
@@ -485,11 +564,13 @@ class PhoneApiClient(
                 val errorCode = json.optString("code", "HTTP_$statusCode")
                 val errorMessage = json.optString("error", json.optString("message", "Request failed with HTTP $statusCode"))
                 val isTransient = statusCode == 429 || statusCode in 500..599
+                val retryAfter = connection.getHeaderField("Retry-After")
                 ApiResult.Error(
                     code = errorCode,
                     message = errorMessage,
                     statusCode = statusCode,
-                    isTransient = isTransient
+                    isTransient = isTransient,
+                    retryAfterHeader = retryAfter
                 )
             }
         } catch (e: Exception) {

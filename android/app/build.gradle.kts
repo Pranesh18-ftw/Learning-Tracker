@@ -5,11 +5,18 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.serialization")
+    id("org.jetbrains.kotlin.plugin.compose")
+    id("com.google.devtools.ksp")
 }
 
 val configuredApiUrl: String = (project.findProperty("LEARNING_TRACKER_API_BASE_URL") as? String)
     ?: System.getenv("LEARNING_TRACKER_API_BASE_URL")
     ?: ""
+
+val defaultDebugApiUrl = "https://deploy-preview-2--learningtracker001.netlify.app/api/v1/phone"
+val defaultReleaseApiUrl = "https://learningtracker001.netlify.app/api/v1/phone"
+val effectiveDebugApiUrl = configuredApiUrl.ifBlank { defaultDebugApiUrl }
+val effectiveReleaseApiUrl = configuredApiUrl.ifBlank { defaultReleaseApiUrl }
 
 // Support local release-signing.properties or environment variables (outside Git)
 val releaseSigningPropsFile = project.rootProject.file("release-signing.properties")
@@ -34,7 +41,7 @@ val hasReleaseSigning = releaseStoreFile != null &&
 
 android {
     namespace = "com.learningtracker.companion"
-    compileSdk = 34
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.learningtracker.companion"
@@ -47,8 +54,6 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
-
-        buildConfigField("String", "PHONE_API_BASE_URL", "\"${configuredApiUrl.replace("\"", "\\\"")}\"")
     }
 
     signingConfigs {
@@ -70,6 +75,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            buildConfigField("String", "PHONE_API_BASE_URL", "\"${effectiveReleaseApiUrl.replace("\"", "\\\"")}\"")
             if (hasReleaseSigning) {
                 signingConfig = signingConfigs.getByName("release")
             }
@@ -77,6 +83,7 @@ android {
         debug {
             applicationIdSuffix = ".debug"
             isDebuggable = true
+            buildConfigField("String", "PHONE_API_BASE_URL", "\"${effectiveDebugApiUrl.replace("\"", "\\\"")}\"")
         }
     }
 
@@ -87,15 +94,12 @@ android {
 
     kotlinOptions {
         jvmTarget = "17"
+        languageVersion = "1.9"
     }
 
     buildFeatures {
         compose = true
         buildConfig = true
-    }
-
-    composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.11"
     }
 
     packaging {
@@ -128,6 +132,30 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.0")
     testImplementation("org.json:json:20231013")
+    testImplementation("androidx.room:room-testing:2.6.1")
+    testImplementation("androidx.test:core:1.5.0")
+    testImplementation("androidx.test.ext:junit:1.1.5")
+    testImplementation("org.robolectric:robolectric:4.11.1")
+
+    // Room 2.6.1, SQLCipher 4.20.0, AndroidX SQLite 2.7.0
+    implementation("androidx.room:room-runtime:2.6.1")
+    implementation("androidx.room:room-ktx:2.6.1")
+    ksp("androidx.room:room-compiler:2.6.1")
+    implementation("net.zetetic:sqlcipher-android:4.20.0")
+    implementation("androidx.sqlite:sqlite:2.7.0")
+
+    // WorkManager 2.9.0
+    implementation("androidx.work:work-runtime-ktx:2.9.0")
+    testImplementation("androidx.work:work-testing:2.9.0")
+
+    // Instrumented Testing
+    androidTestImplementation("junit:junit:4.13.2")
+    androidTestImplementation("androidx.test.ext:junit:1.1.5")
+    androidTestImplementation("androidx.test:runner:1.5.2")
+    androidTestImplementation("androidx.test:rules:1.5.0")
+    androidTestImplementation("androidx.test:core:1.5.0")
+    androidTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.0")
+    androidTestImplementation("androidx.room:room-testing:2.6.1")
 
     // Compose Debugging
     debugImplementation("androidx.compose.ui:ui-tooling")
@@ -168,7 +196,7 @@ val allowUnsigned: Boolean = project.hasProperty("ALLOW_UNSIGNED_RELEASE") ||
 // Fail closed if release builds attempt to assemble without valid HTTPS URL or without signing credentials
 tasks.matching { it.name == "packageRelease" || it.name == "assembleRelease" }.configureEach {
     doFirst {
-        validateReleaseApiUrl(configuredApiUrl)
+        validateReleaseApiUrl(effectiveReleaseApiUrl)
         if (!hasReleaseSigning && !allowUnsigned) {
             throw GradleException(
                 "Missing release signing credentials: A distributable release APK cannot be produced without production signing. " +
@@ -179,3 +207,4 @@ tasks.matching { it.name == "packageRelease" || it.name == "assembleRelease" }.c
         }
     }
 }
+

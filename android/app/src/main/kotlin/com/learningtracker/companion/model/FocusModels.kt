@@ -66,6 +66,17 @@ data class FocusSessionContract(
 )
 
 /**
+ * Session boundary confidence taxonomy (Phase 1 Requirement F).
+ * Distinguishes authoritative completion from estimated/uncertain boundaries.
+ */
+@Serializable
+enum class BoundaryConfidence {
+    AUTHORITATIVE,
+    ESTIMATED,
+    UNAVAILABLE
+}
+
+/**
  * Honest Focus Integrity summary produced at session completion (Prompt #16 & #17).
  * NO FAKE "FOCUS SCORE: 83%".
  * NO CLAIM OF PHYSICAL PHONE PICKUP.
@@ -85,9 +96,46 @@ data class FocusSummary(
     val longestUninterruptedSeconds: Long,
     val interruptions: List<Interruption> = emptyList(),
     val appBreakdown: List<AppBreakdownSummary> = emptyList(),
+    val timeline: List<TimelineInterval> = emptyList(),
     val collectionStatus: CollectionStatus = CollectionStatus.COMPLETE,
+    val boundaryConfidence: BoundaryConfidence = BoundaryConfidence.AUTHORITATIVE,
     val timestamp: Long = System.currentTimeMillis(),
     val syncState: String = "PENDING"
+)
+
+/**
+ * Single classified interval on the attention timeline.
+ */
+@Serializable
+data class TimelineInterval(
+    val id: String = "",
+    val startTime: Long,
+    val endTime: Long,
+    val durationSeconds: Long = ((endTime - startTime).coerceAtLeast(0L) / 1000L),
+    val classification: String = "FOCUSED", // "FOCUSED", "DISTRACTION", "PAUSED", "UNOBSERVED"
+    val packageName: String? = null,
+    val appCategory: String? = null,
+    val note: String? = null
+)
+
+@Serializable
+data class ObservedWindow(
+    val startedAt: Long,
+    val endedAt: Long
+)
+
+/**
+ * Incremental timeline snapshot sent periodically while Focus is active.
+ */
+@Serializable
+data class TimelineSnapshot(
+    val schemaVersion: String = "1.0.0",
+    val sessionId: String,
+    val snapshotVersion: Int = 1,
+    val timestamp: Long = System.currentTimeMillis(),
+    val observedWindow: ObservedWindow,
+    val intervals: List<TimelineInterval> = emptyList(),
+    val collectionStatus: CollectionStatus = CollectionStatus.COMPLETE
 )
 
 /**
@@ -101,3 +149,4 @@ data class DeviceAssociation(
     val pairedAccountEmail: String? = null,
     val pairedAt: Long = System.currentTimeMillis()
 )
+

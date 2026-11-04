@@ -23,6 +23,7 @@ import com.learningtracker.companion.model.CompanionState
 import com.learningtracker.companion.model.DeviceAssociation
 import com.learningtracker.companion.model.FocusSessionContract
 import com.learningtracker.companion.model.FocusSummary
+import com.learningtracker.companion.model.MonitoringState
 import com.learningtracker.companion.tracker.EventReplayEngine
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -39,6 +40,14 @@ fun HomeScreen(
     pendingUploadCount: Int = 0,
     lastSuccessfulUploadTime: Long = 0L,
     lastError: String? = null,
+    isAutomaticTrackingEnabled: Boolean = true,
+    onToggleAutomaticTracking: ((Boolean) -> Unit)? = null,
+    monitoringState: MonitoringState = MonitoringState.READY,
+    hasNotificationPermission: Boolean = true,
+    onRequestNotificationPermission: (() -> Unit)? = null,
+    isBatteryOptimizationIgnored: Boolean = true,
+    onRequestIgnoreBatteryOptimization: (() -> Unit)? = null,
+    activeSession: FocusSessionContract? = null,
     onGrantUsageAccess: () -> Unit,
     onOpenPairingDialog: () -> Unit,
     onRetryUploads: () -> Unit,
@@ -77,6 +86,7 @@ fun HomeScreen(
             val isReady = state == CompanionState.CONNECTED || state == CompanionState.MONITORING_ACTIVE || state == CompanionState.READY
             val isWarning = state == CompanionState.PERMISSION_REQUIRED || state == CompanionState.UPLOAD_PENDING || state == CompanionState.NOT_PAIRED
             val stateColor = when {
+                activeSession != null -> Color(0xFFF97316)
                 isReady -> Color(0xFF10B981)
                 state == CompanionState.ERROR || state == CompanionState.REVOKED -> Color(0xFFEF4444)
                 else -> Color(0xFFF59E0B)
@@ -98,7 +108,7 @@ fun HomeScreen(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = state.name.replace("_", " "),
+                        text = if (activeSession != null) "FOCUS ACTIVE" else state.name.replace("_", " "),
                         color = Color.White,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
@@ -107,42 +117,146 @@ fun HomeScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
-            // Tactile Info Card
+            // Active Session Banner if active
+            if (activeSession != null) {
+                Surface(
+                    color = Color(0x22F97316),
+                    shape = RoundedCornerShape(20.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0x66F97316)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(18.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(10.dp)
+                                    .background(Color(0xFFF97316), shape = RoundedCornerShape(100.dp))
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = "MONITORING ACTIVE",
+                                color = Color(0xFFFDBA74),
+                                fontWeight = FontWeight.Black,
+                                fontSize = 11.sp,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = activeSession.taskName ?: "Focus Session",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Automatic background tracking running. Will finalize and sync automatically when completed on the website.",
+                            color = Color(0xFF94A3B8),
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+
+            // Phase 6 Tactile Status Card
             Card(
                 colors = CardDefaults.cardColors(containerColor = Color(0xFF111827)),
                 shape = RoundedCornerShape(24.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    // Connection Status
                     InfoRow(
-                        label = "Device Status",
+                        label = "Connection",
                         value = if (device != null) "Paired (${device.deviceName})" else "Not Paired",
                         valueColor = if (device != null) Color(0xFF10B981) else Color(0xFF94A3B8)
                     )
-                    if (device != null) {
-                        InfoRow(
-                            label = "Device ID",
-                            value = device.deviceAssociationId.take(16) + "...",
-                            valueColor = Color(0xFFA5B4FC)
-                        )
-                    }
+
+                    // Usage Access
                     InfoRow(
                         label = "Usage Access",
                         value = if (hasUsageAccess) "✓ Granted" else "✕ Action Required",
                         valueColor = if (hasUsageAccess) Color(0xFF10B981) else Color(0xFFEF4444)
                     )
+
+                    // Automatic Focus Tracking Toggle Row
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = "Automatic Tracking",
+                                color = Color(0xFF94A3B8),
+                                fontSize = 13.sp
+                            )
+                            Text(
+                                text = if (isAutomaticTrackingEnabled) "Enabled (Leave app freely)" else "Disabled",
+                                color = if (isAutomaticTrackingEnabled) Color(0xFF10B981) else Color(0xFFEF4444),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                        if (onToggleAutomaticTracking != null) {
+                            Switch(
+                                checked = isAutomaticTrackingEnabled,
+                                onCheckedChange = onToggleAutomaticTracking,
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = Color.White,
+                                    checkedTrackColor = Color(0xFF10B981),
+                                    uncheckedThumbColor = Color(0xFF94A3B8),
+                                    uncheckedTrackColor = Color(0xFF374151)
+                                )
+                            )
+                        }
+                    }
+
+                    // Monitoring Status
+                    val monitoringLabel = when {
+                        activeSession != null -> "Active (${activeSession.taskName ?: "Focus"})"
+                        !isAutomaticTrackingEnabled -> "Disabled"
+                        !hasUsageAccess -> "Awaiting Permission"
+                        device == null -> "Awaiting Pairing"
+                        else -> "Ready (Waiting for web focus)"
+                    }
+                    InfoRow(
+                        label = "Monitoring",
+                        value = monitoringLabel,
+                        valueColor = if (activeSession != null) Color(0xFFF97316) else if (isAutomaticTrackingEnabled && hasUsageAccess && device != null) Color(0xFF10B981) else Color(0xFF94A3B8)
+                    )
+
+                    // Samsung Battery Optimization Status
+                    InfoRow(
+                        label = "Battery Optimization",
+                        value = if (isBatteryOptimizationIgnored) "✓ Unrestricted" else "⚠️ Optimized (Tap to Allow)",
+                        valueColor = if (isBatteryOptimizationIgnored) Color(0xFF10B981) else Color(0xFFF59E0B)
+                    )
+
+                    // Notification Permission Status
+                    InfoRow(
+                        label = "Notification Status",
+                        value = if (hasNotificationPermission) "✓ Granted" else "⚠️ Permission Needed",
+                        valueColor = if (hasNotificationPermission) Color(0xFF10B981) else Color(0xFFF59E0B)
+                    )
+
+                    // Last Synchronization (Actual Timestamp)
+                    val formattedDate = if (lastSuccessfulUploadTime > 0L) {
+                        SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(lastSuccessfulUploadTime))
+                    } else {
+                        "Never"
+                    }
+                    InfoRow(label = "Last Synchronization", value = formattedDate)
+
+                    // Pending Uploads
                     InfoRow(
                         label = "Pending Uploads",
                         value = "$pendingUploadCount item(s)",
                         valueColor = if (pendingUploadCount > 0) Color(0xFFF59E0B) else Color(0xFF94A3B8)
                     )
-                    if (lastSuccessfulUploadTime > 0L) {
-                        val formattedDate = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(lastSuccessfulUploadTime))
-                        InfoRow(label = "Last Server Ingest", value = formattedDate)
-                    }
-                    InfoRow(label = "Monitoring Policy", value = "Session-Bounded (No Background Drain)")
                 }
             }
 
@@ -162,8 +276,9 @@ fun HomeScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(20.dp))
 
+            // Action Buttons
             if (!hasUsageAccess) {
                 Button(
                     onClick = onGrantUsageAccess,
@@ -172,6 +287,30 @@ fun HomeScreen(
                     modifier = Modifier.fillMaxWidth().height(52.dp)
                 ) {
                     Text("Grant Usage Access", fontWeight = FontWeight.Bold)
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+            } else if (!hasNotificationPermission && onRequestNotificationPermission != null) {
+                Button(
+                    onClick = onRequestNotificationPermission,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3B82F6)),
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.fillMaxWidth().height(52.dp)
+                ) {
+                    Icon(imageVector = Icons.Default.Notifications, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Enable Ongoing Notification", fontWeight = FontWeight.Bold)
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+            } else if (!isBatteryOptimizationIgnored && onRequestIgnoreBatteryOptimization != null) {
+                OutlinedButton(
+                    onClick = onRequestIgnoreBatteryOptimization,
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFF59E0B))
+                ) {
+                    Icon(imageVector = Icons.Default.BatteryChargingFull, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Allow Unrestricted Background Battery", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                 }
                 Spacer(modifier = Modifier.height(12.dp))
             } else if (device == null) {
@@ -310,7 +449,8 @@ fun PairingInputDialog(
 @Composable
 fun ActiveSessionScreen(
     session: FocusSessionContract,
-    onEndSession: () -> Unit
+    onEndSession: () -> Unit = {},
+    onDismissToHome: () -> Unit = {}
 ) {
     Column(
         modifier = Modifier
@@ -353,41 +493,59 @@ fun ActiveSessionScreen(
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Box(
                 modifier = Modifier
-                    .size(120.dp)
+                    .size(110.dp)
                     .background(Color(0xFF1E293B), shape = RoundedCornerShape(32.dp)),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = Icons.Default.Shield,
                     contentDescription = null,
-                    tint = Color(0xFF38BDF8),
-                    modifier = Modifier.size(56.dp)
+                    tint = Color(0xFF10B981),
+                    modifier = Modifier.size(54.dp)
                 )
             }
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(18.dp))
             Text(
-                text = "Observation Active",
+                text = "Automatic Tracking Running",
                 color = Color.White,
-                fontSize = 15.sp,
+                fontSize = 16.sp,
                 fontWeight = FontWeight.Bold
             )
             Spacer(modifier = Modifier.height(6.dp))
             Text(
-                text = "Tracking focus window [${session.intendedDurationSeconds / 60}m intended]. Put your phone aside to preserve focus flow.",
+                text = "Tracking focus window [${session.intendedDurationSeconds / 60}m intended]. Put your phone aside to preserve focus flow.\nWhen finished on the website, this phone will automatically finalize and sync telemetry.",
                 color = Color(0xFF94A3B8),
                 fontSize = 12.sp,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.padding(horizontal = 16.dp)
+                modifier = Modifier.padding(horizontal = 12.dp)
             )
         }
 
-        Button(
-            onClick = onEndSession,
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
-            shape = RoundedCornerShape(16.dp),
-            modifier = Modifier.fillMaxWidth().height(52.dp)
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Text("Conclude Focus Locally", color = Color.White, fontWeight = FontWeight.Bold)
+            Button(
+                onClick = onDismissToHome,
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth().height(50.dp)
+            ) {
+                Text("Dashboard / Minimize App", color = Color.White, fontWeight = FontWeight.Bold)
+            }
+
+            TextButton(
+                onClick = onEndSession,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = "Emergency Conclude Locally (Offline Recovery)",
+                    color = Color(0xFF64748B),
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace
+                )
+            }
         }
     }
 }
