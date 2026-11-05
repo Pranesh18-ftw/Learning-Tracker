@@ -679,9 +679,9 @@ const IdentityDevicesAndPrivacy = ({
                     </div>
                     <div className="text-xs font-sans text-slate-500 dark:text-slate-400">
                       Activity · {device.lastSeenAt ? (
-                        <span className="text-slate-500">Last seen {formatLastSeen(device.lastSeenAt)}</span>
+                        <span className="text-slate-600 dark:text-slate-400">Last seen {formatLastSeen(device.lastSeenAt)}</span>
                       ) : (
-                        <span className="text-slate-500">Awaiting companion connection</span>
+                        <span className="text-slate-600 dark:text-slate-400">Awaiting companion connection</span>
                       )}
                     </div>
                   </div>
@@ -1145,7 +1145,7 @@ const IdentityDevicesAndPrivacy = ({
                     <span className="text-slate-800 dark:text-slate-200 font-bold">Android</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-slate-400">Status</span>
+                    <span className="text-slate-600 dark:text-slate-400">Status</span>
                     <span className={isVerified ? "text-emerald-600 dark:text-emerald-400 font-bold" : "text-amber-500 dark:text-amber-400 font-bold"}>
                       {isVerified ? (current.status === 'revoked' ? 'Revoked' : 'Registered (Server Verified)') : "Registered (Local Fallback · Unverified)"}
                     </span>
@@ -1157,8 +1157,8 @@ const IdentityDevicesAndPrivacy = ({
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-slate-400">Paired</span>
-                    <span className="text-slate-500">{current.pairedAt ? formatPairedAt(current.pairedAt) : 'Unknown'}</span>
+                    <span className="text-slate-600 dark:text-slate-400">Paired</span>
+                    <span className="text-slate-700 dark:text-slate-300">{current.pairedAt ? formatPairedAt(current.pairedAt) : 'Unknown'}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-400">Usage Access</span>
@@ -1167,8 +1167,8 @@ const IdentityDevicesAndPrivacy = ({
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-slate-400">Device ID</span>
-                    <span className="text-[10px] text-slate-400 truncate max-w-[180px] font-mono" title={current.deviceId || current.deviceAssociationId}>
+                    <span className="text-slate-600 dark:text-slate-400">Device ID</span>
+                    <span className="text-[10px] text-slate-600 dark:text-slate-400 truncate max-w-[180px] font-mono" title={current.deviceId || current.deviceAssociationId}>
                       {current.deviceId || current.deviceAssociationId}
                     </span>
                   </div>
