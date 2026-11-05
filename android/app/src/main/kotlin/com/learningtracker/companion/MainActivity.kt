@@ -192,6 +192,7 @@ class MainActivity : ComponentActivity() {
 
     private val app by lazy { application as FocusIntegrityApplication }
     private var pendingPairingToken by mutableStateOf<String?>(null)
+    private var presenceCoordinator: com.learningtracker.companion.sync.CompanionPresenceCoordinator? = null
 
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -261,6 +262,10 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         pendingPairingToken = extractTokenFromIntent(intent)
+        presenceCoordinator = com.learningtracker.companion.sync.CompanionPresenceCoordinator(
+            scope = lifecycleScope,
+            heartbeatIntervalMs = 25000L
+        )
 
         // Runtime request for notification permission on Android 13+ (API 33+)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !hasNotificationPermission()) {
@@ -285,57 +290,62 @@ class MainActivity : ComponentActivity() {
             // Periodically refresh states while in foreground
             LaunchedEffect(Unit) {
                 lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-                    // On resume: catch up on any sessions missed while backgrounded or offline
-                    if (app.pairingManager.isPaired() && !app.pairingManager.isRevoked()) {
-                        withContext(Dispatchers.IO) {
-                            app.syncManager.performUnreconciledRecovery(force = true)
-                        }
-                    }
-
-                    while (isActive) {
-                        hasUsageAccess = UsageAccessHelper.hasUsageAccess(this@MainActivity)
-                        isNotificationGranted = hasNotificationPermission()
-                        isBatteryIgnored = isBatteryOptimizationIgnored()
-                        isPaired = app.pairingManager.isPaired()
-                        isRevoked = app.pairingManager.isRevoked()
-                        isAutomaticTrackingEnabled = app.preferences.isAutomaticTrackingEnabled
-                        pendingUploadCount = app.syncManager.storage.getPendingSummaries().size
-                        lastSuccessfulUploadTime = app.syncManager.getLastSuccessfulUploadTime()
-
-                        if (isPaired && !isRevoked) {
-                            val poll = withContext(Dispatchers.IO) {
-                                app.syncManager.pollActiveSession()
+                    presenceCoordinator?.start(app.syncManager)
+                    try {
+                        // On resume: catch up on any sessions missed while backgrounded or offline
+                        if (app.pairingManager.isPaired() && !app.pairingManager.isRevoked()) {
+                            withContext(Dispatchers.IO) {
+                                app.syncManager.performUnreconciledRecovery(force = true)
                             }
-                            when (poll) {
-                                is PollResult.Active -> {
-                                    activeSession = poll.session
-                                    if (app.preferences.isAutomaticTrackingEnabled && !FocusMonitoringService.isRunning) {
-                                        FocusMonitoringService.startForSession(this@MainActivity, poll.session)
+                        }
+
+                        while (isActive) {
+                            hasUsageAccess = UsageAccessHelper.hasUsageAccess(this@MainActivity)
+                            isNotificationGranted = hasNotificationPermission()
+                            isBatteryIgnored = isBatteryOptimizationIgnored()
+                            isPaired = app.pairingManager.isPaired()
+                            isRevoked = app.pairingManager.isRevoked()
+                            isAutomaticTrackingEnabled = app.preferences.isAutomaticTrackingEnabled
+                            pendingUploadCount = app.syncManager.storage.getPendingSummaries().size
+                            lastSuccessfulUploadTime = app.syncManager.getLastSuccessfulUploadTime()
+
+                            if (isPaired && !isRevoked) {
+                                val poll = withContext(Dispatchers.IO) {
+                                    app.syncManager.pollActiveSession()
+                                }
+                                when (poll) {
+                                    is PollResult.Active -> {
+                                        activeSession = poll.session
+                                        if (app.preferences.isAutomaticTrackingEnabled && !FocusMonitoringService.isRunning) {
+                                            FocusMonitoringService.startForSession(this@MainActivity, poll.session)
+                                        }
+                                    }
+                                    is PollResult.Completed -> {
+                                        activeSession = null
+                                        pendingUploadCount = app.syncManager.storage.getPendingSummaries().size
+                                        lastSuccessfulUploadTime = app.syncManager.getLastSuccessfulUploadTime()
+                                    }
+                                    is PollResult.Cancelled -> {
+                                        activeSession = null
+                                        FocusMonitoringService.stop(this@MainActivity)
+                                    }
+                                    is PollResult.Revoked -> {
+                                        isRevoked = true
+                                        isPaired = false
+                                        lastError = "Device has been revoked on server."
+                                    }
+                                    is PollResult.Error -> {
+                                        lastError = poll.message
+                                    }
+                                    PollResult.Idle -> {
+                                        activeSession = null
                                     }
                                 }
-                                is PollResult.Completed -> {
-                                    activeSession = null
-                                    pendingUploadCount = app.syncManager.storage.getPendingSummaries().size
-                                    lastSuccessfulUploadTime = app.syncManager.getLastSuccessfulUploadTime()
-                                }
-                                is PollResult.Cancelled -> {
-                                    activeSession = null
-                                    FocusMonitoringService.stop(this@MainActivity)
-                                }
-                                is PollResult.Revoked -> {
-                                    isRevoked = true
-                                    isPaired = false
-                                    lastError = "Device has been revoked on server."
-                                }
-                                is PollResult.Error -> {
-                                    lastError = poll.message
-                                }
-                                PollResult.Idle -> {
-                                    activeSession = null
-                                }
                             }
+                            delay(12000L) // Poll every 12 seconds while resumed
                         }
-                        delay(12000L) // Poll every 12 seconds while resumed
+                    } finally {
+                        presenceCoordinator?.stop()
                     }
                 }
             }
@@ -527,6 +537,13 @@ class MainActivity : ComponentActivity() {
         val active = app.syncManager.getActiveSession()
         if (active != null && app.pairingManager.isPaired() && !app.pairingManager.isRevoked() && app.preferences.isAutomaticTrackingEnabled) {
             FocusMonitoringService.startForSession(this, active)
+        }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        lifecycleScope.launch {
+            presenceCoordinator?.stop()
         }
     }
 }

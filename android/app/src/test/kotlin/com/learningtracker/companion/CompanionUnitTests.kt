@@ -2805,4 +2805,247 @@ class CompanionUnitTests {
         assertTrue("SyncManager must successfully exercise heartbeat renewal path", syncHeartbeatSuccess)
         assertEquals(2, fakeApi.heartbeatCalls)
     }
+
+    @Test
+    fun test119_ForegroundAppWithoutActiveSessionRenewsPresenceRepeatedly() = runBlocking {
+        val fakeApi = FakeTestPhoneApiClient()
+        val mockStorage = com.learningtracker.companion.sync.InMemoryTelemetryStorage()
+        val fakePairing = FakeTestPairingManager(token = "devtok_valid_test")
+        val syncManager = FocusIntegritySyncManager(
+            context = null,
+            pairingManager = fakePairing,
+            apiClient = fakeApi,
+            storage = mockStorage
+        )
+        assertNull("Must have NO active focus session", syncManager.getActiveSession())
+
+        val coordinator = com.learningtracker.companion.sync.CompanionPresenceCoordinator(
+            scope = this,
+            heartbeatIntervalMs = 40L
+        )
+
+        coordinator.start(syncManager)
+        assertTrue(coordinator.isRunning)
+
+        // Wait for multiple heartbeat cycles (at least 3 cycles: initial + 2 interval ticks)
+        delay(110L)
+
+        coordinator.stop()
+        assertFalse(coordinator.isRunning)
+        assertTrue("Heartbeat must be called at least 3 times while foregrounded without session", coordinator.heartbeatSuccessCount >= 3)
+    }
+
+    @Test
+    fun test120_PresenceRemainsActiveBeyond75SecondLeaseWhileForegrounded() = runBlocking {
+        val fakeApi = FakeTestPhoneApiClient()
+        val mockStorage = com.learningtracker.companion.sync.InMemoryTelemetryStorage()
+        val fakePairing = FakeTestPairingManager(token = "devtok_valid_test")
+        val syncManager = FocusIntegritySyncManager(
+            context = null,
+            pairingManager = fakePairing,
+            apiClient = fakeApi,
+            storage = mockStorage
+        )
+
+        var virtualServerCurrentTime = 1000000L
+        var virtualServerPresenceExpiresAt = virtualServerCurrentTime + 75000L // 75s lease
+        var wasAlwaysActive = true
+
+        val coordinator = com.learningtracker.companion.sync.CompanionPresenceCoordinator(
+            scope = this,
+            heartbeatIntervalMs = 30L,
+            onHeartbeatSent = { success ->
+                if (success) {
+                    // Check if lease was still active before renewal
+                    if (virtualServerCurrentTime > virtualServerPresenceExpiresAt) {
+                        wasAlwaysActive = false
+                    }
+                    // Renew lease on server for 75 seconds
+                    virtualServerPresenceExpiresAt = virtualServerCurrentTime + 75000L
+                }
+            }
+        )
+
+        coordinator.start(syncManager)
+
+        // Simulate 4 intervals of 25 seconds = 100 seconds (well beyond the 75s lease)
+        for (step in 1..4) {
+            delay(35L)
+            virtualServerCurrentTime += 25000L // Advance 25s of virtual server time
+            assertTrue("Lease must remain active at step $step (virtual time $virtualServerCurrentTime < $virtualServerPresenceExpiresAt)",
+                virtualServerCurrentTime < virtualServerPresenceExpiresAt)
+        }
+
+        coordinator.stop()
+        assertTrue("Presence must have remained continuously active beyond 75s", wasAlwaysActive)
+        assertTrue("Must have completed at least 4 successful renewals", coordinator.heartbeatSuccessCount >= 4)
+    }
+
+    @Test
+    fun test121_ActiveMonitoringContinuesToRenewPresence() = runBlocking {
+        val fakeApi = FakeTestPhoneApiClient()
+        val mockStorage = com.learningtracker.companion.sync.InMemoryTelemetryStorage()
+        val fakePairing = FakeTestPairingManager(token = "devtok_valid_test")
+        val syncManager = FocusIntegritySyncManager(
+            context = null,
+            pairingManager = fakePairing,
+            apiClient = fakeApi,
+            storage = mockStorage
+        )
+
+        val session = FocusSessionContract(
+            sessionId = "sess_active_renew_121",
+            startedAt = 1000L,
+            intendedDurationSeconds = 1500L
+        )
+
+        var pollCount = 0
+        val coordinator = com.learningtracker.companion.service.SessionLifecycleCoordinator(
+            scope = this,
+            pollIntervalMs = 30L,
+            onStateChanged = { pollCount++ }
+        )
+
+        coordinator.startOrTransitionSession(session, syncManager)
+        assertTrue(coordinator.isRunning)
+
+        // Session polling active: each poll runs pollActiveSession() making authenticated requests
+        delay(100L)
+
+        coordinator.stop(syncManager)
+        assertFalse(coordinator.isRunning)
+        assertTrue("Active monitoring must perform recurring server polls", pollCount >= 1)
+        assertTrue("Pairing credentials remain active", syncManager.isPairedAndActive())
+    }
+
+    @Test
+    fun test122_BackgroundingStopsForegroundHeartbeat() = runBlocking {
+        val fakeApi = FakeTestPhoneApiClient()
+        val mockStorage = com.learningtracker.companion.sync.InMemoryTelemetryStorage()
+        val fakePairing = FakeTestPairingManager(token = "devtok_valid_test")
+        val syncManager = FocusIntegritySyncManager(
+            context = null,
+            pairingManager = fakePairing,
+            apiClient = fakeApi,
+            storage = mockStorage
+        )
+
+        val coordinator = com.learningtracker.companion.sync.CompanionPresenceCoordinator(
+            scope = this,
+            heartbeatIntervalMs = 30L
+        )
+
+        coordinator.start(syncManager)
+        delay(70L)
+        assertTrue(coordinator.isRunning)
+
+        // App backgrounded: lifecycle invokes stop()
+        coordinator.stop()
+        assertFalse(coordinator.isRunning)
+        assertNull(coordinator.activeJob)
+
+        val attemptsAtStop = coordinator.heartbeatAttemptCount
+
+        // Wait another 100ms: no more heartbeats should be sent while backgrounded
+        delay(100L)
+        assertEquals("Heartbeat attempts must NOT increase after coordinator stops", attemptsAtStop, coordinator.heartbeatAttemptCount)
+    }
+
+    @Test
+    fun test123_ExpiredPresenceIsRestoredOnAppResumeWithoutRePairing() = runBlocking {
+        val fakeApi = FakeTestPhoneApiClient()
+        val mockStorage = com.learningtracker.companion.sync.InMemoryTelemetryStorage()
+        val fakePairing = FakeTestPairingManager(token = "devtok_valid_test")
+        val syncManager = FocusIntegritySyncManager(
+            context = null,
+            pairingManager = fakePairing,
+            apiClient = fakeApi,
+            storage = mockStorage
+        )
+
+        val coordinator = com.learningtracker.companion.sync.CompanionPresenceCoordinator(
+            scope = this,
+            heartbeatIntervalMs = 1000L // Long interval so only immediate heartbeat fires
+        )
+
+        // App was paused/backgrounded (presence expired on server)
+        // Now app resumes in foreground
+        val initialAttempts = coordinator.heartbeatAttemptCount
+        coordinator.start(syncManager)
+
+        // Immediate touch on start (t = 0)
+        delay(20L)
+        coordinator.stop()
+
+        assertEquals("Immediate presence renewal must fire on resume at t=0", initialAttempts + 1, coordinator.heartbeatAttemptCount)
+        assertTrue("Pairing must remain completely intact without re-pairing", fakePairing.isPaired())
+        assertEquals("devtok_valid_test", fakePairing.getDeviceToken())
+    }
+
+    @Test
+    fun test124_NetworkInterruptionAndRecoveryDoNotRequireRePairing() = runBlocking {
+        val fakeApi = FakeTestPhoneApiClient()
+        val mockStorage = com.learningtracker.companion.sync.InMemoryTelemetryStorage()
+        val fakePairing = FakeTestPairingManager(token = "devtok_valid_test")
+        val syncManager = FocusIntegritySyncManager(
+            context = null,
+            pairingManager = fakePairing,
+            apiClient = fakeApi,
+            storage = mockStorage
+        )
+
+        // 1. Simulate network outage on heartbeat
+        fakeApi.heartbeatResponse = ApiResult.Error("NETWORK_TIMEOUT", "Failed to connect to host", 503, isTransient = true)
+
+        val failedResult = syncManager.sendPresenceHeartbeat()
+        assertFalse("Heartbeat must safely return false on network failure without throwing", failedResult)
+        assertTrue("Device must remain paired despite network interruption", fakePairing.isPaired())
+        assertFalse("Device must NOT be marked revoked on transient failure", fakePairing.isRevoked())
+
+        // 2. Network recovers
+        fakeApi.heartbeatResponse = ApiResult.Success(
+            HeartbeatResponse(true, "companion", "dev_test_hb", true, System.currentTimeMillis()),
+            200
+        )
+
+        val recoveredResult = syncManager.sendPresenceHeartbeat()
+        assertTrue("Heartbeat must succeed once network is restored", recoveredResult)
+        assertTrue("Device remains paired without re-pairing ceremony", fakePairing.isPaired())
+    }
+
+    @Test
+    fun test125_RepeatedLifecycleTransitionsDoNotCreateDuplicateHeartbeatLoops() = runBlocking {
+        val fakeApi = FakeTestPhoneApiClient()
+        val mockStorage = com.learningtracker.companion.sync.InMemoryTelemetryStorage()
+        val fakePairing = FakeTestPairingManager(token = "devtok_valid_test")
+        val syncManager = FocusIntegritySyncManager(
+            context = null,
+            pairingManager = fakePairing,
+            apiClient = fakeApi,
+            storage = mockStorage
+        )
+
+        val coordinator = com.learningtracker.companion.sync.CompanionPresenceCoordinator(
+            scope = this,
+            heartbeatIntervalMs = 50L
+        )
+
+        // Rapid lifecycle churn: user rapidly switching apps or rotating screen (start called 5 times)
+        repeat(5) {
+            coordinator.start(syncManager)
+        }
+
+        assertTrue(coordinator.isRunning)
+        assertNotNull(coordinator.activeJob)
+
+        // Wait for 1 interval cycle (~70ms)
+        delay(70L)
+
+        coordinator.stop()
+
+        // With 5 starts, if duplicate loops were created, we would have 5 loops * 2 heartbeats = 10+ calls.
+        // With single active loop guarantees, each restart cancels previous job, so call count remains ~2 (initial + 1 cycle).
+        assertTrue("Heartbeat calls must not multiply exponentially from duplicate loops (got ${fakeApi.heartbeatCalls})",
+            fakeApi.heartbeatCalls <= 3)
+    }
 }
