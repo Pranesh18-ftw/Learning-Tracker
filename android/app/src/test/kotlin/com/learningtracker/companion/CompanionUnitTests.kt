@@ -766,7 +766,7 @@ class CompanionUnitTests {
         client.setBaseUrl("https://swapped-server.com/api/v1/phone/")
         assertEquals("https://swapped-server.com/api/v1/phone", client.getBaseUrl())
 
-        client.setBaseUrl("http://192.168.1.50:8888")
+        client.setBaseUrl("http://192.168.1.50:8888", isDebug = true)
         assertEquals("http://192.168.1.50:8888/api/v1/phone", client.getBaseUrl())
     }
 
@@ -965,6 +965,114 @@ class CompanionUnitTests {
         val prodUrl = PhoneApiClient.resolveDefaultBaseUrl("https://learningtracker001.netlify.app", isDebug = false)
         assertEquals("https://learningtracker001.netlify.app/api/v1/phone", prodUrl)
     }
+
+    @Test
+    fun test76a_releaseEndpoint_RejectsEmulatorAndLocalEndpointsInRelease() {
+        // Emulator 10.0.2.2 over HTTP
+        try {
+            PhoneApiClient.resolveDefaultBaseUrl("http://10.0.2.2:8888", isDebug = false)
+            fail("Expected IllegalArgumentException for emulator URL in release")
+        } catch (e: IllegalArgumentException) {
+            assertTrue(e.message!!.contains("must use HTTPS") || e.message!!.contains("local, emulator, or preview"))
+        }
+
+        // Emulator 10.0.2.2 over HTTPS
+        try {
+            PhoneApiClient.resolveDefaultBaseUrl("https://10.0.2.2:8888", isDebug = false)
+            fail("Expected IllegalArgumentException for HTTPS emulator URL in release")
+        } catch (e: IllegalArgumentException) {
+            assertTrue(e.message!!.contains("local, emulator, or preview"))
+        }
+
+        // Localhost
+        try {
+            PhoneApiClient.resolveDefaultBaseUrl("http://localhost:8888", isDebug = false)
+            fail("Expected IllegalArgumentException for localhost URL in release")
+        } catch (e: IllegalArgumentException) {
+            assertTrue(e.message!!.contains("must use HTTPS") || e.message!!.contains("local, emulator, or preview"))
+        }
+
+        // 127.0.0.1
+        try {
+            PhoneApiClient.resolveDefaultBaseUrl("https://127.0.0.1:8888", isDebug = false)
+            fail("Expected IllegalArgumentException for 127.0.0.1 in release")
+        } catch (e: IllegalArgumentException) {
+            assertTrue(e.message!!.contains("local, emulator, or preview"))
+        }
+
+        // Deploy preview 2 in release
+        try {
+            PhoneApiClient.resolveDefaultBaseUrl(
+                "https://deploy-preview-2--learningtracker001.netlify.app/api/v1/phone",
+                isDebug = false
+            )
+            fail("Expected IllegalArgumentException for preview URL in release")
+        } catch (e: IllegalArgumentException) {
+            assertTrue(e.message!!.contains("local, emulator, or preview"))
+        }
+    }
+
+    @Test
+    fun test76b_releaseEndpoint_ResolvesToProductionHttps() {
+        val canonical = PhoneApiClient.resolveDefaultBaseUrl(
+            PhoneApiClient.CANONICAL_PRODUCTION_BASE_URL,
+            isDebug = false
+        )
+        assertEquals("https://learningtracker001.netlify.app/api/v1/phone", canonical)
+        assertEquals("https://learningtracker001.netlify.app/api/v1/phone", PhoneApiClient.CANONICAL_PRODUCTION_BASE_URL)
+    }
+
+    @Test
+    fun test76c_debugEndpoint_RemainsCorrectlyConfiguredForPreviewAndEmulator() {
+        val previewUrl = PhoneApiClient.resolveDefaultBaseUrl(
+            "https://deploy-preview-2--learningtracker001.netlify.app/api/v1/phone",
+            isDebug = true
+        )
+        assertEquals("https://deploy-preview-2--learningtracker001.netlify.app/api/v1/phone", previewUrl)
+
+        val emulatorUrl = PhoneApiClient.resolveDefaultBaseUrl(
+            "http://10.0.2.2:8888",
+            isDebug = true
+        )
+        assertEquals("http://10.0.2.2:8888/api/v1/phone", emulatorUrl)
+
+        val defaultUrl = PhoneApiClient.resolveDefaultBaseUrl(null, isDebug = true)
+        assertEquals(PhoneApiClient.DEFAULT_EMULATOR_URL, defaultUrl)
+    }
+
+    @Test
+    fun test76d_pairingPayload_CannotOverrideProductionRoutingWithUnsafeLocalAddress() {
+        val client = PhoneApiClient(initialBaseUrl = "https://learningtracker001.netlify.app/api/v1/phone")
+        val originalBase = client.getBaseUrl()
+        assertEquals("https://learningtracker001.netlify.app/api/v1/phone", originalBase)
+
+        // Attempt override with emulator 10.0.2.2 in production
+        client.setBaseUrl("http://10.0.2.2:8888", isDebug = false)
+        assertEquals(originalBase, client.getBaseUrl())
+
+        // Attempt override with localhost in production
+        client.setBaseUrl("http://localhost:3000", isDebug = false)
+        assertEquals(originalBase, client.getBaseUrl())
+
+        // Attempt override with Deploy Preview 2 in production
+        client.setBaseUrl("https://deploy-preview-2--learningtracker001.netlify.app/api/v1/phone", isDebug = false)
+        assertEquals(originalBase, client.getBaseUrl())
+
+        // Valid production canonical URL is accepted
+        client.setBaseUrl("https://learningtracker001.netlify.app", isDebug = false)
+        assertEquals("https://learningtracker001.netlify.app/api/v1/phone", client.getBaseUrl())
+    }
+
+    @Test
+    fun test76e_isAllowedPairingOrigin_RejectsLocalAndPreviewInRelease() {
+        assertFalse(PhoneApiClient.isAllowedPairingOrigin("http", "10.0.2.2", isDebug = false))
+        assertFalse(PhoneApiClient.isAllowedPairingOrigin("https", "10.0.2.2", isDebug = false))
+        assertFalse(PhoneApiClient.isAllowedPairingOrigin("https", "localhost", isDebug = false))
+        assertFalse(PhoneApiClient.isAllowedPairingOrigin("https", "127.0.0.1", isDebug = false))
+        assertFalse(PhoneApiClient.isAllowedPairingOrigin("https", "deploy-preview-2--learningtracker001.netlify.app", isDebug = false))
+        assertTrue(PhoneApiClient.isAllowedPairingOrigin("https", "learningtracker001.netlify.app", isDebug = false))
+    }
+
 
     // =========================================================================
     // SECTION 13: AUTOMATIC DETECTION, INACTIVITY EXPIRY & TRUTHFULNESS
