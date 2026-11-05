@@ -246,7 +246,8 @@ export async function handlePhoneApiRequest(event, injectedRepo = null) {
 
     // ── ROUTE 4b: POST /presence/heartbeat ──
     if (method === 'POST' && path === '/presence/heartbeat') {
-      const deviceAuth = await authenticateDeviceRequest(authHeader, repository);
+      const effectiveDeviceHeader = authHeader || (body.deviceToken ? `Bearer ${body.deviceToken}` : null);
+      const deviceAuth = await authenticateDeviceRequest(effectiveDeviceHeader, repository);
       if (deviceAuth.authenticated) {
         if (typeof repository.renewDevicePresence === 'function') {
           await repository.renewDevicePresence(deviceAuth.device.deviceId, 75000);
@@ -260,7 +261,8 @@ export async function handlePhoneApiRequest(event, injectedRepo = null) {
         });
       }
 
-      const webAuth = await authenticateWebRequest(authHeader);
+      const effectiveWebHeader = authHeader || body.authHeader || (body.token ? `Bearer ${body.token}` : null);
+      const webAuth = await authenticateWebRequest(effectiveWebHeader);
       if (webAuth.authenticated) {
         const clientId = body.clientId || 'default_client';
         const action = body.action || 'heartbeat';

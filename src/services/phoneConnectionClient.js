@@ -618,6 +618,7 @@ export async function fetchTelemetryHistory(options = {}) {
  */
 let activeBrowserPresenceTimer = null;
 let activeBrowserClientId = null;
+let lastKnownAuthHeader = null;
 
 export function getBrowserClientId() {
   if (!activeBrowserClientId) {
@@ -628,11 +629,13 @@ export function getBrowserClientId() {
 
 export function resetBrowserClientIdForTesting(newId = null) {
   activeBrowserClientId = newId;
+  lastKnownAuthHeader = null;
 }
 
 export async function sendBrowserPresenceHeartbeat(clientId = getBrowserClientId()) {
   const authHeader = await getAuthHeader({ waitForAuth: false });
   if (!authHeader) return { success: false, reason: 'LOCAL_MODE_UNAUTHENTICATED' };
+  lastKnownAuthHeader = authHeader;
 
   const url = `${getApiBaseUrl()}/presence/heartbeat`;
   try {
@@ -653,20 +656,27 @@ export async function sendBrowserPresenceHeartbeat(clientId = getBrowserClientId
 
 export function sendBrowserDisconnectBeacon(clientId = getBrowserClientId()) {
   const url = `${getApiBaseUrl()}/presence/heartbeat`;
-  const payload = JSON.stringify({ clientId, action: 'disconnect' });
+  const payload = JSON.stringify({
+    clientId,
+    action: 'disconnect',
+    authHeader: lastKnownAuthHeader
+  });
   try {
-    if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
-      const blob = new Blob([payload], { type: 'application/json' });
-      navigator.sendBeacon(url, blob);
-      return true;
-    }
     if (typeof fetch === 'function') {
       fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(lastKnownAuthHeader ? { Authorization: lastKnownAuthHeader } : {})
+        },
         body: payload,
         keepalive: true
       }).catch(() => {});
+      return true;
+    }
+    if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
+      const blob = new Blob([payload], { type: 'application/json' });
+      navigator.sendBeacon(url, blob);
       return true;
     }
   } catch (_) {}

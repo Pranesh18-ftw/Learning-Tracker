@@ -399,6 +399,17 @@ class FocusIntegritySyncManager(
 
     fun getActiveSession(): FocusSessionContract? = activeSession ?: loadPersistedActiveSession()
 
+    /**
+     * Exercises the explicit presence heartbeat path to renew the companion presence lease.
+     */
+    fun sendPresenceHeartbeat(): Boolean {
+        val pm = pairingManager ?: return false
+        if (!pm.isPaired() || pm.isRevoked()) return false
+        val token = pm.getDeviceToken() ?: return false
+        val result = apiClient.sendHeartbeat(token)
+        return result is ApiResult.Success
+    }
+
     fun getLastSuccessfulUploadTime(): Long = lastSuccessfulUploadTime
 
     fun onFocusStarted(session: FocusSessionContract) {

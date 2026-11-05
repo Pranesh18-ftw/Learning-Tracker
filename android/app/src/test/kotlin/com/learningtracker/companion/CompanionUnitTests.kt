@@ -1485,10 +1485,17 @@ class CompanionUnitTests {
             ApiResult.Success(TelemetrySubmissionResponse(true, "sum_default", System.currentTimeMillis(), "DELIVERED", false), 200)
         var unreconciledResponse: ApiResult<List<FocusSessionContract>> =
             ApiResult.Success(emptyList(), 200)
+        var heartbeatResponse: ApiResult<HeartbeatResponse> =
+            ApiResult.Success(HeartbeatResponse(true, "companion", "dev_test_hb", true, System.currentTimeMillis()), 200)
+        var heartbeatCalls: Int = 0
 
         override fun getActiveSession(deviceToken: String): ApiResult<ActiveSessionResponse> = activeSessionResponse
         override fun getSessionStatus(sessionId: String, deviceToken: String): ApiResult<SessionStatusResponse> = sessionStatusResponse
         override fun getUnreconciledSessions(deviceToken: String, limit: Int): ApiResult<List<FocusSessionContract>> = unreconciledResponse
+        override fun sendHeartbeat(deviceToken: String): ApiResult<HeartbeatResponse> {
+            heartbeatCalls++
+            return heartbeatResponse
+        }
         override fun postTimelineSnapshot(sessionId: String, snapshot: TimelineSnapshot, deviceToken: String): ApiResult<TimelineSnapshotResponse> = snapshotResponse
         override fun submitTelemetrySummary(payload: TelemetrySummaryPayload, deviceToken: String): ApiResult<TelemetrySubmissionResponse> = telemetryResponse
     }
@@ -2771,5 +2778,31 @@ class CompanionUnitTests {
         assertNull(coordinator.activeJob)
         assertFalse("Coordinator mutex must be unlocked", coordinator.mutex.isLocked)
         assertEquals("onStopForeground must be invoked exactly once", 1, stopForegroundCount)
+    }
+
+    @Test
+    fun test118_PhoneApiClient_and_SyncManager_sendPresenceHeartbeat() {
+        val fakeApi = FakeTestPhoneApiClient()
+        val mockStorage = com.learningtracker.companion.sync.InMemoryTelemetryStorage()
+        val fakePairing = FakeTestPairingManager(token = "devtok_valid_test")
+        val syncManager = FocusIntegritySyncManager(
+            context = null,
+            pairingManager = fakePairing,
+            apiClient = fakeApi,
+            storage = mockStorage
+        )
+
+        // Exercise PhoneApiClient directly
+        val apiResult = fakeApi.sendHeartbeat("devtok_valid_test")
+        assertTrue(apiResult is ApiResult.Success)
+        val data = (apiResult as ApiResult.Success).data
+        assertTrue(data.success)
+        assertEquals("companion", data.role)
+        assertEquals(1, fakeApi.heartbeatCalls)
+
+        // Exercise SyncManager presence heartbeat path
+        val syncHeartbeatSuccess = syncManager.sendPresenceHeartbeat()
+        assertTrue("SyncManager must successfully exercise heartbeat renewal path", syncHeartbeatSuccess)
+        assertEquals(2, fakeApi.heartbeatCalls)
     }
 }

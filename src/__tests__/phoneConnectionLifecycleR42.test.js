@@ -25,6 +25,9 @@ import {
   setPhoneRepositoryForTest
 } from '../server/phone/phoneDurableRepository';
 import {
+  setTokenVerifierForTest
+} from '../server/phone/phoneAuthenticationService';
+import {
   startPairingChallenge,
   completePairingChallenge,
   listOwnerDevices,
@@ -45,10 +48,12 @@ describe('R4.2 PART A — Connection Lifecycle & Authoritative Server Presence',
   beforeEach(() => {
     repository = createMockPhoneRepository();
     setPhoneRepositoryForTest(repository);
+    setTokenVerifierForTest(async (token) => token ? { uid: OWNER_UID, email: 'test@example.com' } : null);
     clearFocusIntegrityData();
   });
 
   afterEach(() => {
+    setTokenVerifierForTest(null);
     setPhoneRepositoryForTest(null);
     clearFocusIntegrityData();
   });
@@ -370,5 +375,79 @@ describe('R4.2 PART A — Connection Lifecycle & Authoritative Server Presence',
     expect(isCompanionPaired(dev)).toBe(false);
     expect(isCompanionConnected(dev)).toBe(false);
     expect(getCompanionConnectionState(dev)).toBe('UNPAIRED');
+  });
+
+  // 11. Heartbeat edge cases: beacon disconnect with body authHeader
+  test('11. Heartbeat edge cases: beacon disconnect with body authHeader clears browser presence without HTTP Authorization header', async () => {
+    // Browser tab connects
+    await repository.renewBrowserPresence(OWNER_UID, 'tab_beacon_test', 60000);
+    expect(await repository.isBrowserOnline(OWNER_UID)).toBe(true);
+
+    // Browser fires disconnect beacon without Authorization header (e.g. navigator.sendBeacon)
+    // but carries the auth token / authHeader in the payload body
+    const beaconEvent = {
+      httpMethod: 'POST',
+      path: '/api/v1/phone/presence/heartbeat',
+      headers: {
+        'content-type': 'application/json'
+        // NOTE: No authorization header!
+      },
+      body: JSON.stringify({
+        clientId: 'tab_beacon_test',
+        action: 'disconnect',
+        authHeader: 'Bearer valid_token'
+      })
+    };
+
+    const res = await handlePhoneApiRequest(beaconEvent, repository);
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.success).toBe(true);
+    expect(body.action).toBe('disconnected');
+    expect(body.clientId).toBe('tab_beacon_test');
+
+    // Confirm browser is now marked offline
+    const isOnline = await repository.isBrowserOnline(OWNER_UID);
+    expect(isOnline).toBe(false);
+  });
+
+  // 12. Heartbeat edge cases: explicit companion sendHeartbeat endpoint invocation renews device lease
+  test('12. Heartbeat edge cases: companion sendHeartbeat endpoint invocation renews device lease', async () => {
+    const challengeRes = await startPairingChallenge(OWNER_UID, repository);
+    const pairResult = await completePairingChallenge({
+      pairingCode: challengeRes.pairingCode,
+      deviceId: 'dev_galaxy_s25_test12',
+      deviceName: 'Samsung Galaxy S25',
+      protocolVersion: '1.0.0',
+      consent: { consentVersion: '1.0.0', categories: ['REFERENCE'] }
+    }, repository);
+
+    // Force expire companion presence
+    await repository.updateDevice('dev_galaxy_s25_test12', { presenceExpiresAt: Date.now() - 10000 });
+    let dev = await repository.getDevice('dev_galaxy_s25_test12');
+    expect(dev.presenceExpiresAt).toBeLessThan(Date.now());
+
+    // Companion calls explicit /presence/heartbeat with device token
+    const companionHbEvent = {
+      httpMethod: 'POST',
+      path: '/api/v1/phone/presence/heartbeat',
+      headers: {
+        authorization: `Bearer ${pairResult.deviceToken}`,
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({ action: 'heartbeat' })
+    };
+
+    const res = await handlePhoneApiRequest(companionHbEvent, repository);
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.success).toBe(true);
+    expect(body.role).toBe('companion');
+    expect(body.deviceId).toBe('dev_galaxy_s25_test12');
+    expect(body.deviceOnline).toBe(true);
+
+    // Verify lease is now renewed on server
+    dev = await repository.getDevice('dev_galaxy_s25_test12');
+    expect(dev.presenceExpiresAt).toBeGreaterThan(Date.now());
   });
 });
