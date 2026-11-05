@@ -745,6 +745,32 @@ const IdentityDevicesAndPrivacy = ({
 
         </div>
 
+        {/* Android Companion Download (Part B) */}
+        <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-copper-500/10 text-copper-600 dark:text-copper-400 flex items-center justify-center">
+              <Smartphone className="w-5 h-5" />
+            </div>
+            <div>
+              <span className="text-xs font-mono font-bold text-slate-900 dark:text-white block">
+                Learning Tracker Companion
+              </span>
+              <span className="text-xs font-sans text-slate-500 dark:text-slate-400">
+                Android application · Version 1.0.1
+              </span>
+            </div>
+          </div>
+          <a
+            href="https://github.com/Pranesh18-ftw/Learning-Tracker/releases/download/companion-v1.0.1/learningtracker-companion-v1.0.1.apk"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-3.5 py-2 rounded-xl bg-copper-600 hover:bg-copper-700 text-white font-sans text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 self-start sm:self-auto cursor-pointer"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>Download for Android</span>
+          </a>
+        </div>
+
         {/* Focus Integrity Toggle (Prompt #27) */}
         <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
