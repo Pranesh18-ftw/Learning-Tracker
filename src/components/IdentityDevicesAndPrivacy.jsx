@@ -688,6 +688,24 @@ const IdentityDevicesAndPrivacy = ({
                 </div>
 
                 <div className="flex items-center gap-2">
+                  <div className="mr-1 sm:mr-2">
+                    {device.connectionState === 'CONNECTED' ? (
+                      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-mono font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/30">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        <span>Connected</span>
+                      </span>
+                    ) : device.status === 'revoked' ? (
+                      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-mono font-bold text-rose-600 dark:text-rose-400 bg-rose-500/10 border border-rose-500/30">
+                        <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                        <span>Revoked</span>
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-mono font-bold text-slate-600 dark:text-slate-400 bg-slate-200 dark:bg-slate-700/60 border border-slate-300 dark:border-slate-600">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                        <span>Paired · Offline</span>
+                      </span>
+                    )}
+                  </div>
                   <button
                     type="button"
                     onClick={() => setConnectionCelebrationDevice(device)}

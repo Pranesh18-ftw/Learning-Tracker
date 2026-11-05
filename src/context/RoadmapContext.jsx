@@ -1,3 +1,4 @@
+import { startBrowserPresenceManager } from '../services/phoneConnectionClient';
 import React, { createContext, useState, useContext, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   getLocalDateKey,
@@ -228,6 +229,14 @@ export const RoadmapProvider = ({ children, initialSubjects }) => {
       setCorruptedDataKeys(prev => prev.filter(k => k !== key));
     }
   };
+
+  // Authoritative Browser Presence Lease Manager (Part A)
+  useEffect(() => {
+    const cleanup = startBrowserPresenceManager({ intervalMs: 25000 });
+    return () => {
+      if (typeof cleanup === 'function') cleanup();
+    };
+  }, []);
 
   // Canonical User Identity & Account state
   const [account, setAccount] = useState(() => getOrCreateAccount());

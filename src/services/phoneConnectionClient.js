@@ -610,4 +610,99 @@ export async function fetchTelemetryHistory(options = {}) {
   }
 }
 
+/**
+ * ── BROWSER PRESENCE LIFECYCLE & LEASE MANAGEMENT (Part A) ──
+ * Active browser tabs periodically renew a presence lease on the server.
+ * Multiple tabs are supported independently: each tab owns a unique clientId,
+ * so one tab closing does not mark other active tabs offline.
+ */
+let activeBrowserPresenceTimer = null;
+let activeBrowserClientId = null;
 
+export function getBrowserClientId() {
+  if (!activeBrowserClientId) {
+    activeBrowserClientId = 'tab_' + Math.random().toString(36).slice(2, 10);
+  }
+  return activeBrowserClientId;
+}
+
+export function resetBrowserClientIdForTesting(newId = null) {
+  activeBrowserClientId = newId;
+}
+
+export async function sendBrowserPresenceHeartbeat(clientId = getBrowserClientId()) {
+  const authHeader = await getAuthHeader({ waitForAuth: false });
+  if (!authHeader) return { success: false, reason: 'LOCAL_MODE_UNAUTHENTICATED' };
+
+  const url = `${getApiBaseUrl()}/presence/heartbeat`;
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: authHeader
+      },
+      body: JSON.stringify({ clientId, action: 'heartbeat' })
+    });
+    if (!res.ok) return { success: false, status: res.status };
+    return await res.json().catch(() => ({ success: true }));
+  } catch (err) {
+    return { success: false, reason: 'NETWORK_UNAVAILABLE' };
+  }
+}
+
+export function sendBrowserDisconnectBeacon(clientId = getBrowserClientId()) {
+  const url = `${getApiBaseUrl()}/presence/heartbeat`;
+  const payload = JSON.stringify({ clientId, action: 'disconnect' });
+  try {
+    if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
+      const blob = new Blob([payload], { type: 'application/json' });
+      navigator.sendBeacon(url, blob);
+      return true;
+    }
+    if (typeof fetch === 'function') {
+      fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: payload,
+        keepalive: true
+      }).catch(() => {});
+      return true;
+    }
+  } catch (_) {}
+  return false;
+}
+
+export function startBrowserPresenceManager(options = {}) {
+  const { intervalMs = 25000 } = options;
+  if (typeof window === 'undefined') return () => {};
+
+  const clientId = getBrowserClientId();
+
+  // Send initial lease renewal immediately
+  sendBrowserPresenceHeartbeat(clientId).catch(() => {});
+
+  if (activeBrowserPresenceTimer) {
+    clearInterval(activeBrowserPresenceTimer);
+  }
+  activeBrowserPresenceTimer = setInterval(() => {
+    sendBrowserPresenceHeartbeat(clientId).catch(() => {});
+  }, intervalMs);
+
+  const handleUnload = () => {
+    sendBrowserDisconnectBeacon(clientId);
+  };
+
+  window.addEventListener('pagehide', handleUnload);
+  window.addEventListener('beforeunload', handleUnload);
+
+  return () => {
+    if (activeBrowserPresenceTimer) {
+      clearInterval(activeBrowserPresenceTimer);
+      activeBrowserPresenceTimer = null;
+    }
+    window.removeEventListener('pagehide', handleUnload);
+    window.removeEventListener('beforeunload', handleUnload);
+    sendBrowserDisconnectBeacon(clientId);
+  };
+}
