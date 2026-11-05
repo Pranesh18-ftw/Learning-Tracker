@@ -9,6 +9,8 @@ import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
+import com.learningtracker.companion.BuildConfig
+
 
 
 /**
@@ -124,6 +126,32 @@ open class PhoneApiClient(
          * In debug:
          * - Also permits localhost / 127.0.0.1 / 10.0.2.2 over HTTP or HTTPS for development.
          */
+        fun isLocalOrEmulatorHost(host: String?): Boolean {
+            if (host.isNullOrBlank()) return false
+            val normalized = host.lowercase().trim()
+            return normalized == "10.0.2.2" ||
+                    normalized == "localhost" ||
+                    normalized == "127.0.0.1" ||
+                    normalized == "::1"
+        }
+
+        fun isForbiddenProductionHostOrUrl(urlOrHost: String?): Boolean {
+            if (urlOrHost.isNullOrBlank()) return true
+            val lower = urlOrHost.lowercase().trim()
+            val hostPart = try {
+                val uri = java.net.URI(if (lower.startsWith("http://") || lower.startsWith("https://")) lower else "https://$lower")
+                uri.host?.lowercase() ?: lower
+            } catch (_: Exception) {
+                lower
+            }
+            return isLocalOrEmulatorHost(hostPart) ||
+                    lower.contains("10.0.2.2") ||
+                    lower.contains("localhost") ||
+                    lower.contains("127.0.0.1") ||
+                    lower.contains(":8888") ||
+                    lower.contains("deploy-preview-2")
+        }
+
         fun isAllowedPairingOrigin(
             scheme: String?,
             host: String?,
@@ -136,9 +164,7 @@ open class PhoneApiClient(
 
             // Development localhost / emulator support (debug builds only)
             if (isDebug) {
-                val isLocalHost = normalizedHost == "10.0.2.2" ||
-                        normalizedHost == "localhost" ||
-                        normalizedHost == "127.0.0.1"
+                val isLocalHost = isLocalOrEmulatorHost(normalizedHost)
                 if (isLocalHost && (normalizedScheme == "http" || normalizedScheme == "https")) {
                     return true
                 }
@@ -146,6 +172,11 @@ open class PhoneApiClient(
 
             // Production strictly requires HTTPS
             if (normalizedScheme != "https") {
+                return false
+            }
+
+            // In production, reject local/emulator or preview hosts even if configured
+            if (!isDebug && isForbiddenProductionHostOrUrl(normalizedHost)) {
                 return false
             }
 
@@ -160,6 +191,7 @@ open class PhoneApiClient(
 
             return false
         }
+
 
 
         /**
@@ -204,6 +236,9 @@ open class PhoneApiClient(
                     if (uri.host.isNullOrBlank()) {
                         throw IllegalArgumentException("Production API base URL must contain a valid host: '$candidate'")
                     }
+                    if (isForbiddenProductionHostOrUrl(candidate)) {
+                        throw IllegalArgumentException("Production API base URL cannot use local, emulator, or preview endpoint: '$candidate'")
+                    }
                 }
                 return normalizeApiUrl(candidate)
             }
@@ -222,31 +257,35 @@ open class PhoneApiClient(
         if (!explicitUrl.isNullOrBlank()) {
             return normalizeApiUrl(explicitUrl)
         }
+        val isDebug = try {
+            BuildConfig.DEBUG
+        } catch (_: Throwable) {
+            // Default to release security posture if BuildConfig cannot be inspected
+            false
+        }
+
         val buildConfigUrl = try {
-            val clazz = Class.forName("com.learningtracker.companion.BuildConfig")
-            val field = clazz.getField("PHONE_API_BASE_URL")
-            field.get(null) as? String
-        } catch (_: Exception) {
+            BuildConfig.PHONE_API_BASE_URL.takeIf { it.isNotBlank() }
+        } catch (_: Throwable) {
             null
         }
 
-        val isDebug = try {
-            val clazz = Class.forName("com.learningtracker.companion.BuildConfig")
-            val field = clazz.getField("DEBUG")
-            field.getBoolean(null)
-        } catch (_: Exception) {
-            // JVM unit tests without Android BuildConfig default to debug
-            true
-        }
-
-        return resolveDefaultBaseUrl(buildConfigUrl, isDebug)
+        val fallbackUrl = if (isDebug) null else CANONICAL_PRODUCTION_BASE_URL
+        val effectiveConfiguredUrl = buildConfigUrl ?: fallbackUrl
+        return resolveDefaultBaseUrl(effectiveConfiguredUrl, isDebug)
     }
 
-    fun setBaseUrl(url: String) {
+    fun setBaseUrl(
+        url: String,
+        isDebug: Boolean = try { BuildConfig.DEBUG } catch (_: Throwable) { false }
+    ) {
         val trimmed = url.trim()
-        if (trimmed.isNotEmpty()) {
-            baseUrl = normalizeApiUrl(trimmed)
+        if (trimmed.isEmpty()) return
+        if (!isDebug && isForbiddenProductionHostOrUrl(trimmed)) {
+            // Defense-in-depth: Rejects unsafe local/emulator/preview URLs in production
+            return
         }
+        baseUrl = normalizeApiUrl(trimmed)
     }
 
     fun getBaseUrl(): String = baseUrl

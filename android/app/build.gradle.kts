@@ -16,7 +16,21 @@ val configuredApiUrl: String = (project.findProperty("LEARNING_TRACKER_API_BASE_
 val defaultDebugApiUrl = "https://deploy-preview-2--learningtracker001.netlify.app/api/v1/phone"
 val defaultReleaseApiUrl = "https://learningtracker001.netlify.app/api/v1/phone"
 val effectiveDebugApiUrl = configuredApiUrl.ifBlank { defaultDebugApiUrl }
-val effectiveReleaseApiUrl = configuredApiUrl.ifBlank { defaultReleaseApiUrl }
+val effectiveReleaseApiUrl = run {
+    val candidate = configuredApiUrl.ifBlank { defaultReleaseApiUrl }
+    try {
+        val uri = URI(candidate)
+        val host = uri.host?.lowercase() ?: ""
+        if (uri.scheme != "https" || host in listOf("10.0.2.2", "localhost", "127.0.0.1") || candidate.contains("8888") || candidate.contains("deploy-preview-2")) {
+            defaultReleaseApiUrl
+        } else {
+            candidate
+        }
+    } catch (_: Exception) {
+        defaultReleaseApiUrl
+    }
+}
+
 
 // Support local release-signing.properties or environment variables (outside Git)
 val releaseSigningPropsFile = project.rootProject.file("release-signing.properties")
@@ -47,8 +61,8 @@ android {
         applicationId = "com.learningtracker.companion"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.0.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {

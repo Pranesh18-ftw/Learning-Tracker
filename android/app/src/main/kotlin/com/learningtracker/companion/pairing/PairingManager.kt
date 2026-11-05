@@ -30,6 +30,10 @@ open class PairingManager(
         secureStore?.getServerBaseUrl()?.let { savedUrl ->
             if (savedUrl.isNotBlank()) {
                 apiClient.setBaseUrl(savedUrl)
+                if (apiClient.getBaseUrl() != PhoneApiClient.normalizeApiUrl(savedUrl)) {
+                    // Stored preference was rejected as unsafe/forbidden; synchronize with authoritative base URL
+                    secureStore.saveServerBaseUrl(apiClient.getBaseUrl())
+                }
             }
         }
     }

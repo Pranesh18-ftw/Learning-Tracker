@@ -10,3 +10,7 @@
 }
 -keep class com.learningtracker.companion.work.** { *; }
 
+# Preserve BuildConfig and its buildConfigField entries from R8 shrinking
+-keep class com.learningtracker.companion.BuildConfig { *; }
+
+
