@@ -97,6 +97,14 @@ data class TimelineSnapshotResponse(
     val snapshotVersion: Int
 )
 
+data class HeartbeatResponse(
+    val success: Boolean,
+    val role: String,
+    val deviceId: String,
+    val deviceOnline: Boolean,
+    val now: Long
+)
+
 
 /**
  * Native HTTP client for Learning Tracker Netlify Functions API.
@@ -336,6 +344,26 @@ open class PhoneApiClient(
                 deviceToken = devToken,
                 protocolVersion = proto,
                 pairedAt = pairedAt
+            )
+        }
+    }
+
+    /**
+     * Sends an explicit presence heartbeat to the authoritative server lease manager.
+     * POST /presence/heartbeat
+     */
+    open fun sendHeartbeat(deviceToken: String): ApiResult<HeartbeatResponse> {
+        val url = "$baseUrl/presence/heartbeat"
+        val jsonBody = JSONObject().apply {
+            put("action", "heartbeat")
+        }
+        return executeRequest("POST", url, jsonBody.toString(), token = deviceToken) { responseJson, _ ->
+            HeartbeatResponse(
+                success = responseJson.optBoolean("success", true),
+                role = responseJson.optString("role", "companion"),
+                deviceId = responseJson.optString("deviceId", ""),
+                deviceOnline = responseJson.optBoolean("deviceOnline", true),
+                now = responseJson.optLong("now", System.currentTimeMillis())
             )
         }
     }

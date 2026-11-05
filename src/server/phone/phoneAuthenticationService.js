@@ -224,10 +224,17 @@ export async function authenticateDeviceRequest(authHeader, repository) {
     };
   }
 
-  // Update last seen timestamp asynchronously (throttled to once every 5 minutes to prevent excessive Firestore writes)
-  const LAST_SEEN_UPDATE_INTERVAL_MS = 5 * 60 * 1000;
-  if (!device.lastSeenAt || (Date.now() - device.lastSeenAt > LAST_SEEN_UPDATE_INTERVAL_MS)) {
-    repository.updateDevice(device.deviceId, { lastSeenAt: Date.now() }).catch(() => {});
+  // Update presence lease asynchronously (75 seconds lease, bounded writes)
+  if (typeof repository.renewDevicePresence === 'function') {
+    const now = Date.now();
+    if (!device.lastSeenAt || !device.presenceExpiresAt || (device.presenceExpiresAt - now < 35000)) {
+      repository.renewDevicePresence(device.deviceId, 75000).catch(() => {});
+    }
+  } else {
+    const LAST_SEEN_UPDATE_INTERVAL_MS = 5 * 60 * 1000;
+    if (!device.lastSeenAt || (Date.now() - device.lastSeenAt > LAST_SEEN_UPDATE_INTERVAL_MS)) {
+      repository.updateDevice(device.deviceId, { lastSeenAt: Date.now() }).catch(() => {});
+    }
   }
 
   return {

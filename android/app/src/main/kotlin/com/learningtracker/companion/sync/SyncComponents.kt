@@ -16,6 +16,9 @@ import com.learningtracker.companion.tracker.InterruptionClassifier
 import com.learningtracker.companion.usage.UsageEventsCollector
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.coroutines.*
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.util.UUID
 
 /**
@@ -399,6 +402,41 @@ class FocusIntegritySyncManager(
 
     fun getActiveSession(): FocusSessionContract? = activeSession ?: loadPersistedActiveSession()
 
+    private val heartbeatLock = Any()
+    @Volatile
+    private var isHeartbeatExecuting: Boolean = false
+
+    fun isPairedAndActive(): Boolean {
+        val pm = pairingManager ?: return false
+        return pm.isPaired() && !pm.isRevoked()
+    }
+
+    /**
+     * Exercises the explicit presence heartbeat path to renew the companion presence lease.
+     * Guarded against overlapping concurrent executions.
+     */
+    fun sendPresenceHeartbeat(): Boolean {
+        if (!isPairedAndActive()) return false
+        val pm = pairingManager ?: return false
+        val token = pm.getDeviceToken() ?: return false
+
+        synchronized(heartbeatLock) {
+            if (isHeartbeatExecuting) return false
+            isHeartbeatExecuting = true
+        }
+
+        return try {
+            val result = apiClient.sendHeartbeat(token)
+            result is ApiResult.Success
+        } catch (_: Exception) {
+            false
+        } finally {
+            synchronized(heartbeatLock) {
+                isHeartbeatExecuting = false
+            }
+        }
+    }
+
     fun getLastSuccessfulUploadTime(): Long = lastSuccessfulUploadTime
 
     fun onFocusStarted(session: FocusSessionContract) {
@@ -735,5 +773,76 @@ class FocusIntegritySyncManager(
 
     fun clearPendingTelemetry() {
         storage.clearAllSummaries()
+    }
+}
+
+/**
+ * CompanionPresenceCoordinator
+ *
+ * Lifecycle-aware foreground presence coordinator.
+ * Renews the companion presence lease periodically while the app is in the foreground,
+ * even when no focus session is active.
+ *
+ * Guarantees:
+ * 1. Single active loop: starting cancels any existing loop before launching.
+ * 2. Non-overlapping executions: guarded against slow/failed network calls.
+ * 3. Lifecycle-aware: starts on foreground resume, cancels immediately on background pause/stop.
+ * 4. Immediate touch on start: immediately renews presence upon foreground resumption.
+ */
+class CompanionPresenceCoordinator(
+    private val scope: CoroutineScope,
+    val heartbeatIntervalMs: Long = 25000L,
+    private val onHeartbeatSent: ((Boolean) -> Unit)? = null
+) {
+    val mutex = Mutex()
+
+    @Volatile
+    var activeJob: Job? = null
+        private set
+
+    @Volatile
+    var isRunning: Boolean = false
+        private set
+
+    @Volatile
+    var heartbeatSuccessCount: Int = 0
+        private set
+
+    @Volatile
+    var heartbeatAttemptCount: Int = 0
+        private set
+
+    suspend fun start(syncManager: FocusIntegritySyncManager) = mutex.withLock {
+        // Cancel existing job if active to prevent duplicate workers/loops
+        activeJob?.cancel()
+        activeJob = null
+        isRunning = true
+
+        activeJob = scope.launch(Dispatchers.IO) {
+            // Immediate touch on start (e.g. app resume)
+            if (syncManager.isPairedAndActive()) {
+                heartbeatAttemptCount++
+                val success = syncManager.sendPresenceHeartbeat()
+                if (success) heartbeatSuccessCount++
+                onHeartbeatSent?.invoke(success)
+            }
+
+            while (isActive && isRunning) {
+                delay(heartbeatIntervalMs)
+                if (!isActive || !isRunning) break
+                if (syncManager.isPairedAndActive()) {
+                    heartbeatAttemptCount++
+                    val success = syncManager.sendPresenceHeartbeat()
+                    if (success) heartbeatSuccessCount++
+                    onHeartbeatSent?.invoke(success)
+                }
+            }
+        }
+    }
+
+    suspend fun stop() = mutex.withLock {
+        isRunning = false
+        activeJob?.cancel()
+        activeJob = null
     }
 }

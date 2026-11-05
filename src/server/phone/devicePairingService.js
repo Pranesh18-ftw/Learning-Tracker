@@ -119,7 +119,8 @@ export async function completePairingChallenge(payload, repository, clientIp = '
     status: 'active',
     consent,
     pairedAt: now,
-    lastSeenAt: now
+    lastSeenAt: now,
+    presenceExpiresAt: now + 75000
   };
 
   const credentialRecord = {
@@ -165,6 +166,10 @@ export async function listOwnerDevices(ownerUid, repository) {
   }
 
   const rawDevices = await repository.listDevicesByOwner(ownerUid);
+  const now = Date.now();
+  const browserOnline = typeof repository.isBrowserOnline === 'function'
+    ? await repository.isBrowserOnline(ownerUid)
+    : false;
 
   // Return clean DTOs without credential hashes, marking expired devices
   const devices = [];
@@ -172,21 +177,33 @@ export async function listOwnerDevices(ownerUid, repository) {
     let status = d.status;
     let expiredAt = d.expiredAt || null;
 
-    if (status === 'active' && isDeviceInactivityExpired(d)) {
+    if (status === 'active' && isDeviceInactivityExpired(d, now)) {
       status = 'expired';
-      expiredAt = Date.now();
+      expiredAt = now;
       // Mark expired in repository and revoke credentials without refreshing lastSeenAt
       repository.updateDevice(d.deviceId, { status: 'expired', expiredAt }).catch(() => {});
       repository.revokeDeviceCredentials(d.deviceId).catch(() => {});
+    }
+
+    const isPaired = status === 'active';
+    const deviceOnline = isPaired && Boolean(d.presenceExpiresAt && d.presenceExpiresAt > now);
+
+    let connectionState = 'UNPAIRED';
+    if (isPaired) {
+      connectionState = (deviceOnline && browserOnline) ? 'CONNECTED' : 'OFFLINE';
     }
 
     devices.push({
       deviceId: d.deviceId,
       deviceName: d.deviceName,
       status,
+      connectionState,
+      deviceOnline,
+      browserOnline,
       protocolVersion: d.protocolVersion,
       pairedAt: d.pairedAt,
       lastSeenAt: d.lastSeenAt,
+      presenceExpiresAt: d.presenceExpiresAt || null,
       revokedAt: d.revokedAt || null,
       expiredAt
     });

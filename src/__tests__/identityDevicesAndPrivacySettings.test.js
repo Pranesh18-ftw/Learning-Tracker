@@ -564,4 +564,27 @@ describe('IdentityDevicesAndPrivacy — Server Device Synchronization & Settings
 
     useRoadmapSpy.mockRestore();
   });
+
+  test('13. Android companion download action renders direct link to verified release v1.0.1 APK asset', async () => {
+    listPairedDevicesSpy.mockResolvedValueOnce({
+      success: true,
+      devices: []
+    });
+
+    await act(async () => {
+      root.render(<IdentityDevicesAndPrivacy />);
+    });
+
+    expect(container.textContent).toContain('Learning Tracker Companion');
+    expect(container.textContent).toContain('Android application · Version 1.0.1');
+    expect(container.textContent).toContain('Download for Android');
+
+    const downloadLink = container.querySelector('a[href*="learningtracker-companion-v1.0.1.apk"]');
+    expect(downloadLink).not.toBeNull();
+    expect(downloadLink.getAttribute('href')).toBe(
+      'https://github.com/Pranesh18-ftw/Learning-Tracker/releases/download/companion-v1.0.1/learningtracker-companion-v1.0.1.apk'
+    );
+    expect(downloadLink.getAttribute('target')).toBe('_blank');
+    expect(downloadLink.getAttribute('rel')).toContain('noopener');
+  });
 });

@@ -149,11 +149,35 @@ export function isCompanionPaired() {
 }
 
 /**
- * Backward compatibility alias for isCompanionPaired.
- * NOTE: "Connected" historically meant merely "paired". For live connectivity, use isCompanionReachable().
+ * Evaluates whether a companion device has verified, live connectivity.
+ * Strict truthfulness (Part A):
+ * - If device has server connectionState, CONNECTED is true only when connectionState === 'CONNECTED'.
+ * - Otherwise checks genuine reachability signal within COMPANION_REACHABILITY_THRESHOLD_MS.
+ * - Historical pairing alone NEVER implies a live connection.
  */
-export function isCompanionConnected() {
-  return isCompanionPaired();
+export function isCompanionConnected(device = getPairedDevice()) {
+  if (!device) return false;
+  if (!isCompanionPaired(device)) return false;
+  if (device.connectionState !== undefined) {
+    return device.connectionState === 'CONNECTED';
+  }
+  return isCompanionPaired(device);
+}
+
+/**
+ * Returns the tripartite authoritative connection state:
+ * - 'CONNECTED': Paired with active server presence leases for both browser and companion.
+ * - 'OFFLINE': Paired registration exists, but companion presence lease has expired.
+ * - 'UNPAIRED': Device registration does not exist or has been revoked.
+ */
+export function getCompanionConnectionState(device = getPairedDevice()) {
+  if (!device || !isCompanionPaired(device)) {
+    return 'UNPAIRED';
+  }
+  if (device.connectionState) {
+    return device.connectionState;
+  }
+  return isCompanionReachable() ? 'CONNECTED' : 'OFFLINE';
 }
 
 export { COMPANION_REACHABILITY_THRESHOLD_MS, DEVICE_INACTIVITY_EXPIRY_MS, isDeviceInactivityExpired, isDeviceReachable };

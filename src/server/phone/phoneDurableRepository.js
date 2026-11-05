@@ -312,6 +312,50 @@ export class FirestorePhoneRepository {
     return { success: true };
   }
 
+  async renewDevicePresence(deviceId, leaseDurationMs = 75000) {
+    const db = this._getDb();
+    const now = Date.now();
+    const presenceExpiresAt = now + leaseDurationMs;
+    const ref = db.collection('phone_devices').doc(deviceId);
+    await ref.update({
+      presenceExpiresAt,
+      lastSeenAt: now
+    });
+    return { deviceId, presenceExpiresAt, lastSeenAt: now };
+  }
+
+  async renewBrowserPresence(ownerUid, clientId, leaseDurationMs = 60000) {
+    const db = this._getDb();
+    const now = Date.now();
+    const expiresAt = now + leaseDurationMs;
+    const leaseId = `${ownerUid}_${clientId}`;
+    await db.collection('phone_browser_presence').doc(leaseId).set({
+      ownerUid,
+      clientId,
+      expiresAt,
+      updatedAt: now
+    });
+    return { ownerUid, clientId, expiresAt };
+  }
+
+  async clearBrowserPresence(ownerUid, clientId) {
+    const db = this._getDb();
+    const leaseId = `${ownerUid}_${clientId}`;
+    await db.collection('phone_browser_presence').doc(leaseId).delete().catch(() => {});
+    return { success: true };
+  }
+
+  async isBrowserOnline(ownerUid) {
+    const db = this._getDb();
+    const now = Date.now();
+    const snapshot = await db.collection('phone_browser_presence')
+      .where('ownerUid', '==', ownerUid)
+      .where('expiresAt', '>', now)
+      .limit(1)
+      .get();
+    return !snapshot.empty;
+  }
+
   async saveFocusSession(session) {
     const db = this._getDb();
     await db.collection('phone_focus_sessions').doc(session.sessionId).set(session);
@@ -499,6 +543,7 @@ export function createInMemoryPhoneRepository() {
   const telemetry = new Map();
   const timelines = new Map();
   const rateLimits = new Map();
+  const browserLeases = new Map();
 
   return {
     isConfigured: () => true,
@@ -642,6 +687,42 @@ export function createInMemoryPhoneRepository() {
         }
       }
       return { success: true };
+    },
+
+    browserLeases: new Map(),
+
+    renewDevicePresence: async (deviceId, leaseDurationMs = 75000) => {
+      const existing = devices.get(deviceId);
+      if (!existing) return null;
+      const now = Date.now();
+      const presenceExpiresAt = now + leaseDurationMs;
+      const updated = { ...existing, presenceExpiresAt, lastSeenAt: now };
+      devices.set(deviceId, updated);
+      return { deviceId, presenceExpiresAt, lastSeenAt: now };
+    },
+
+    renewBrowserPresence: async (ownerUid, clientId, leaseDurationMs = 60000) => {
+      const now = Date.now();
+      const expiresAt = now + leaseDurationMs;
+      const leaseId = `${ownerUid}_${clientId}`;
+      browserLeases.set(leaseId, { ownerUid, clientId, expiresAt, updatedAt: now });
+      return { ownerUid, clientId, expiresAt };
+    },
+
+    clearBrowserPresence: async (ownerUid, clientId) => {
+      const leaseId = `${ownerUid}_${clientId}`;
+      browserLeases.delete(leaseId);
+      return { success: true };
+    },
+
+    isBrowserOnline: async (ownerUid) => {
+      const now = Date.now();
+      for (const lease of browserLeases.values()) {
+        if (lease.ownerUid === ownerUid && lease.expiresAt > now) {
+          return true;
+        }
+      }
+      return false;
     },
 
     saveFocusSession: async (session) => {
@@ -791,9 +872,12 @@ export function createInMemoryPhoneRepository() {
       sessions.clear();
       telemetry.clear();
       rateLimits.clear();
+      browserLeases.clear();
     }
   };
 }
+
+export const createMockPhoneRepository = createInMemoryPhoneRepository;
 
 let _testRepository = null;
 

@@ -244,6 +244,64 @@ export async function handlePhoneApiRequest(event, injectedRepo = null) {
       return jsonResponse(result.statusCode || (result.success ? 200 : 400), result);
     }
 
+    // ── ROUTE 4b: POST /presence/heartbeat ──
+    if (method === 'POST' && path === '/presence/heartbeat') {
+      const effectiveDeviceHeader = authHeader || (body.deviceToken ? `Bearer ${body.deviceToken}` : null);
+      const deviceAuth = await authenticateDeviceRequest(effectiveDeviceHeader, repository);
+      if (deviceAuth.authenticated) {
+        if (typeof repository.renewDevicePresence === 'function') {
+          await repository.renewDevicePresence(deviceAuth.device.deviceId, 75000);
+        }
+        return jsonResponse(200, {
+          success: true,
+          role: 'companion',
+          deviceId: deviceAuth.device.deviceId,
+          deviceOnline: true,
+          now: Date.now()
+        });
+      }
+
+      const effectiveWebHeader = authHeader || body.authHeader || (body.token ? `Bearer ${body.token}` : null);
+      const webAuth = await authenticateWebRequest(effectiveWebHeader);
+      if (webAuth.authenticated) {
+        const clientId = body.clientId || 'default_client';
+        const action = body.action || 'heartbeat';
+        if (action === 'disconnect') {
+          if (typeof repository.clearBrowserPresence === 'function') {
+            await repository.clearBrowserPresence(webAuth.uid, clientId);
+          }
+          const stillOnline = typeof repository.isBrowserOnline === 'function'
+            ? await repository.isBrowserOnline(webAuth.uid)
+            : false;
+          return jsonResponse(200, {
+            success: true,
+            role: 'browser',
+            action: 'disconnected',
+            browserOnline: stillOnline,
+            clientId,
+            now: Date.now()
+          });
+        }
+
+        if (typeof repository.renewBrowserPresence === 'function') {
+          await repository.renewBrowserPresence(webAuth.uid, clientId, 60000);
+        }
+        return jsonResponse(200, {
+          success: true,
+          role: 'browser',
+          action: 'renewed',
+          browserOnline: true,
+          clientId,
+          now: Date.now()
+        });
+      }
+
+      return jsonResponse(401, {
+        error: 'Authentication required for presence heartbeat.',
+        code: 'UNAUTHORIZED'
+      });
+    }
+
     // ── ROUTE 5: POST /focus-sessions/start ──
     if (method === 'POST' && path === '/focus-sessions/start') {
       const auth = await authenticateWebRequest(authHeader);

@@ -679,15 +679,33 @@ const IdentityDevicesAndPrivacy = ({
                     </div>
                     <div className="text-xs font-sans text-slate-500 dark:text-slate-400">
                       Activity · {device.lastSeenAt ? (
-                        <span className="text-slate-500">Last seen {formatLastSeen(device.lastSeenAt)}</span>
+                        <span className="text-slate-600 dark:text-slate-400">Last seen {formatLastSeen(device.lastSeenAt)}</span>
                       ) : (
-                        <span className="text-slate-500">Awaiting companion connection</span>
+                        <span className="text-slate-600 dark:text-slate-400">Awaiting companion connection</span>
                       )}
                     </div>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-2">
+                  <div className="mr-1 sm:mr-2">
+                    {device.connectionState === 'CONNECTED' ? (
+                      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-mono font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/30">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        <span>Connected</span>
+                      </span>
+                    ) : device.status === 'revoked' ? (
+                      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-mono font-bold text-rose-600 dark:text-rose-400 bg-rose-500/10 border border-rose-500/30">
+                        <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                        <span>Revoked</span>
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-mono font-bold text-slate-600 dark:text-slate-400 bg-slate-200 dark:bg-slate-700/60 border border-slate-300 dark:border-slate-600">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                        <span>Paired · Offline</span>
+                      </span>
+                    )}
+                  </div>
                   <button
                     type="button"
                     onClick={() => setConnectionCelebrationDevice(device)}
@@ -743,6 +761,32 @@ const IdentityDevicesAndPrivacy = ({
             </div>
           )}
 
+        </div>
+
+        {/* Android Companion Download (Part B) */}
+        <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-copper-500/10 text-copper-600 dark:text-copper-400 flex items-center justify-center">
+              <Smartphone className="w-5 h-5" />
+            </div>
+            <div>
+              <span className="text-xs font-mono font-bold text-slate-900 dark:text-white block">
+                Learning Tracker Companion
+              </span>
+              <span className="text-xs font-sans text-slate-500 dark:text-slate-400">
+                Android application · Version 1.0.1
+              </span>
+            </div>
+          </div>
+          <a
+            href="https://github.com/Pranesh18-ftw/Learning-Tracker/releases/download/companion-v1.0.1/learningtracker-companion-v1.0.1.apk"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-3.5 py-2 rounded-xl bg-copper-600 hover:bg-copper-700 text-white font-sans text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 self-start sm:self-auto cursor-pointer"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>Download for Android</span>
+          </a>
         </div>
 
         {/* Focus Integrity Toggle (Prompt #27) */}
@@ -1119,7 +1163,7 @@ const IdentityDevicesAndPrivacy = ({
                     <span className="text-slate-800 dark:text-slate-200 font-bold">Android</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-slate-400">Status</span>
+                    <span className="text-slate-600 dark:text-slate-400">Status</span>
                     <span className={isVerified ? "text-emerald-600 dark:text-emerald-400 font-bold" : "text-amber-500 dark:text-amber-400 font-bold"}>
                       {isVerified ? (current.status === 'revoked' ? 'Revoked' : 'Registered (Server Verified)') : "Registered (Local Fallback · Unverified)"}
                     </span>
@@ -1131,8 +1175,8 @@ const IdentityDevicesAndPrivacy = ({
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-slate-400">Paired</span>
-                    <span className="text-slate-500">{current.pairedAt ? formatPairedAt(current.pairedAt) : 'Unknown'}</span>
+                    <span className="text-slate-600 dark:text-slate-400">Paired</span>
+                    <span className="text-slate-700 dark:text-slate-300">{current.pairedAt ? formatPairedAt(current.pairedAt) : 'Unknown'}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-400">Usage Access</span>
@@ -1141,8 +1185,8 @@ const IdentityDevicesAndPrivacy = ({
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-slate-400">Device ID</span>
-                    <span className="text-[10px] text-slate-400 truncate max-w-[180px] font-mono" title={current.deviceId || current.deviceAssociationId}>
+                    <span className="text-slate-600 dark:text-slate-400">Device ID</span>
+                    <span className="text-[10px] text-slate-600 dark:text-slate-400 truncate max-w-[180px] font-mono" title={current.deviceId || current.deviceAssociationId}>
                       {current.deviceId || current.deviceAssociationId}
                     </span>
                   </div>
