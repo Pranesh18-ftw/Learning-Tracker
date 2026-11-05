@@ -48,7 +48,7 @@ describe('R4.2 PART A — Connection Lifecycle & Authoritative Server Presence',
   beforeEach(() => {
     repository = createMockPhoneRepository();
     setPhoneRepositoryForTest(repository);
-    setTokenVerifierForTest(async (token) => token ? { uid: OWNER_UID, email: 'test@example.com' } : null);
+    setTokenVerifierForTest(async (token) => (token && !token.includes('invalid') && !token.includes('bad')) ? { uid: OWNER_UID, email: 'test@example.com' } : null);
     clearFocusIntegrityData();
   });
 
@@ -449,5 +449,55 @@ describe('R4.2 PART A — Connection Lifecycle & Authoritative Server Presence',
     // Verify lease is now renewed on server
     dev = await repository.getDevice('dev_galaxy_s25_test12');
     expect(dev.presenceExpiresAt).toBeGreaterThan(Date.now());
+  });
+
+  // 13. Browser beacon security invariants: rejection of invalid tokens, header precedence, and endpoint scoping
+  test('13. Browser beacon security invariants: rejection of invalid tokens, header precedence, and endpoint scoping', async () => {
+    // A. Reject invalid or missing token in beacon body
+    await repository.renewBrowserPresence(OWNER_UID, 'tab_sec_test', 60000);
+    const invalidBeaconEvent = {
+      httpMethod: 'POST',
+      path: '/api/v1/phone/presence/heartbeat',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        clientId: 'tab_sec_test',
+        action: 'disconnect',
+        authHeader: 'Bearer invalid_garbage_token'
+      })
+    };
+    const invalidRes = await handlePhoneApiRequest(invalidBeaconEvent, repository);
+    expect(invalidRes.statusCode).toBe(401);
+    // Presence must NOT be cleared by unauthorized beacon
+    expect(await repository.isBrowserOnline(OWNER_UID)).toBe(true);
+
+    // B. Authorization header precedence over body token
+    // When an invalid Authorization header is present, it is evaluated first (taking precedence) and rejected
+    const headerPrecedenceEvent = {
+      httpMethod: 'POST',
+      path: '/api/v1/phone/presence/heartbeat',
+      headers: {
+        authorization: 'Bearer bad_header_token',
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({
+        clientId: 'tab_sec_test',
+        action: 'disconnect',
+        authHeader: 'Bearer valid_token'
+      })
+    };
+    const precRes = await handlePhoneApiRequest(headerPrecedenceEvent, repository);
+    expect(precRes.statusCode).toBe(401);
+
+    // C. Body auth is strictly scoped to /presence/heartbeat and rejected on other endpoints
+    const otherEndpointEvent = {
+      httpMethod: 'GET',
+      path: '/api/v1/phone/devices',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        authHeader: 'Bearer valid_token'
+      })
+    };
+    const otherRes = await handlePhoneApiRequest(otherEndpointEvent, repository);
+    expect(otherRes.statusCode).toBe(401);
   });
 });
